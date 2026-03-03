@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Equity Research – {{ symbol }}</title>
+  <!-- CSS is injected via WeasyPrint stylesheets in report_generator -->
+</head>
+<body>
+  <div class="meta">
+    {{ company_name }} ({{ symbol }}) · {{ exchange }} · Generated {{ generated_at }}
+  </div>
+  <h1>Executive Summary</h1>
+  <div class="section">{{ executive_summary | safe }}</div>
+
+  <h1>Company Overview</h1>
+  <div class="section">{{ company_overview | safe }}</div>
+
+  <h1>Management & Governance</h1>
+  <div class="section">{{ management_research | safe }}</div>
+
+  <h1>Financial Risk</h1>
+  <div class="section">{{ financial_risk | safe }}</div>
+  {% if financial_ratios %}
+  <h2>Key ratios</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Metric</th>
+        <th>Value</th>
+        <th>Period</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in financial_ratios %}
+      <tr>
+        <td>{{ r.get('metric', '') }}</td>
+        <td>{{ r.get('value', '') }}</td>
+        <td>{{ r.get('period', '') }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <h1>Concall Evaluation</h1>
+  <div class="section">{{ concall_evaluation | safe }}</div>
+
+  <h1>Sectoral Headwinds & Tailwinds</h1>
+  <div class="section">{{ sectoral_analysis | safe }}</div>
+</body>
+</html>

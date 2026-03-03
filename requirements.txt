@@ -1,0 +1,30 @@
+# LangGraph and LLM
+langgraph>=0.2.0
+langchain-openai>=0.2.0
+langchain-core>=0.3.0
+
+# Observability (optional): visualize runs in LangSmith
+langsmith>=0.2.0
+
+# Web search for latest data (optional)
+langchain-tavily>=0.2.0
+
+# NSE data (free)
+nse[local]>=2.1.0
+
+# Financials (NSE fundamentals; nifpy uses yfinance, lxml, plotly, matplotlib, etc.)
+nifpy>=3.0.0
+yfinance>=0.2.0
+lxml>=5.0.0
+beautifulsoup4>=4.12.0
+requests>=2.28.0
+plotly>=5.18.0
+matplotlib>=3.7.0
+
+# PDF report
+weasyprint>=62.0
+Jinja2>=3.1.0
+
+# Config and types
+python-dotenv>=1.0.0
+pydantic>=2.0.0
