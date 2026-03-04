@@ -7,6 +7,7 @@ from langgraph.graph import END, START, StateGraph
 
 from src.state import ResearchState
 from src.nodes.aggregate import aggregate
+from src.nodes.auditor_flags import auditor_flags
 from src.nodes.company_overview import company_overview
 from src.nodes.concall_evaluator import concall_evaluator
 from src.nodes.financial_risk import financial_risk
@@ -18,11 +19,12 @@ from src.nodes.sectoral import sectoral
 
 
 def _fan_out_research(_state: ResearchState) -> list[str]:
-    """After resolve_company, run all five research nodes in parallel."""
+    """After resolve_company, run all six research nodes in parallel."""
     return [
         "company_overview",
         "management",
         "financial_risk",
+        "auditor_flags",
         "concall_evaluator",
         "sectoral",
     ]
@@ -43,6 +45,7 @@ def build_graph():
     graph.add_node("company_overview", company_overview)
     graph.add_node("management", management)
     graph.add_node("financial_risk", financial_risk)
+    graph.add_node("auditor_flags", auditor_flags)
     graph.add_node("concall_evaluator", concall_evaluator)
     graph.add_node("sectoral", sectoral)
     graph.add_node("aggregate", aggregate)
@@ -55,6 +58,7 @@ def build_graph():
     graph.add_edge("company_overview", "aggregate")
     graph.add_edge("management", "aggregate")
     graph.add_edge("financial_risk", "aggregate")
+    graph.add_edge("auditor_flags", "aggregate")
     graph.add_edge("concall_evaluator", "aggregate")
     graph.add_edge("sectoral", "aggregate")
 

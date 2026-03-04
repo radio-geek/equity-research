@@ -11,17 +11,30 @@ from src.config import get_reports_dir
 from src.state import ResearchState
 
 
+def _as_html(text: str) -> str:
+    """Pass through if already HTML, otherwise convert plain text."""
+    if text.strip().startswith("<"):
+        return text
+    return _text_to_html(text)
+
+
 def _text_to_html(text: str) -> str:
-    """Escape and turn newlines into HTML."""
+    """Convert plain text (with basic markdown) to HTML paragraphs."""
     if not text:
         return ""
-    escaped = (
+    # Strip markdown citation links [label](url) → keep label only
+    text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)
+    # Escape HTML special chars
+    text = (
         text.replace("&", "&amp;")
         .replace("<", "&lt;")
         .replace(">", "&gt;")
         .replace('"', "&quot;")
     )
-    return "<p>" + re.sub(r"\n\n+", "</p><p>", escaped).replace("\n", "<br>") + "</p>"
+    # Render markdown bold/italic (applied after escaping — safe)
+    text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
+    text = re.sub(r"\*(.+?)\*", r"<em>\1</em>", text)
+    return "<p>" + re.sub(r"\n\n+", "</p><p>", text).replace("\n", "<br>") + "</p>"
 
 
 def _render_html(state: ResearchState, template_dir: Path, styles_path: Path) -> str:
@@ -42,7 +55,8 @@ def _render_html(state: ResearchState, template_dir: Path, styles_path: Path) ->
         company_overview=_text_to_html(state.get("company_overview") or ""),
         management_research=_text_to_html(state.get("management_research") or ""),
         financial_risk=_text_to_html(state.get("financial_risk") or ""),
-        concall_evaluation=_text_to_html(state.get("concall_evaluation") or ""),
+        auditor_flags=_as_html(state.get("auditor_flags") or ""),
+        concall_evaluation=_as_html(state.get("concall_evaluation") or ""),
         sectoral_analysis=_text_to_html(state.get("sectoral_analysis") or ""),
         financial_ratios=state.get("financial_ratios") or [],
     )
