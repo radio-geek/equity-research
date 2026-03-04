@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from src.config import get_reports_dir
+from src.report.charts import yearly_metrics_to_table
 from src.state import ResearchState
 
 
@@ -59,6 +60,9 @@ def _render_html(state: ResearchState, template_dir: Path, styles_path: Path) ->
         concall_evaluation=_as_html(state.get("concall_evaluation") or ""),
         sectoral_analysis=_text_to_html(state.get("sectoral_analysis") or ""),
         financial_ratios=state.get("financial_ratios") or [],
+        yearly_metrics=state.get("yearly_metrics") or [],
+        yearly_table=yearly_metrics_to_table(state.get("yearly_metrics") or []),
+        qoq_highlights=state.get("qoq_highlights") or {"good": [], "bad": []},
     )
 
 

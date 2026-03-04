@@ -13,13 +13,14 @@ from src.nodes.concall_evaluator import concall_evaluator
 from src.nodes.financial_risk import financial_risk
 from src.nodes.follow_up import follow_up, should_generate_report
 from src.nodes.management import management
+from src.nodes.qoq_financials import qoq_financials
 from src.nodes.report_generator import report_generator
 from src.nodes.resolve_company import resolve_company
 from src.nodes.sectoral import sectoral
 
 
 def _fan_out_research(_state: ResearchState) -> list[str]:
-    """After resolve_company, run all six research nodes in parallel."""
+    """After resolve_company, run all seven research nodes in parallel."""
     return [
         "company_overview",
         "management",
@@ -27,6 +28,7 @@ def _fan_out_research(_state: ResearchState) -> list[str]:
         "auditor_flags",
         "concall_evaluator",
         "sectoral",
+        "qoq_financials",
     ]
 
 
@@ -48,6 +50,7 @@ def build_graph():
     graph.add_node("auditor_flags", auditor_flags)
     graph.add_node("concall_evaluator", concall_evaluator)
     graph.add_node("sectoral", sectoral)
+    graph.add_node("qoq_financials", qoq_financials)
     graph.add_node("aggregate", aggregate)
     graph.add_node("follow_up", follow_up)
     graph.add_node("report_generator", report_generator)
@@ -61,6 +64,7 @@ def build_graph():
     graph.add_edge("auditor_flags", "aggregate")
     graph.add_edge("concall_evaluator", "aggregate")
     graph.add_edge("sectoral", "aggregate")
+    graph.add_edge("qoq_financials", "aggregate")
 
     graph.add_edge("aggregate", "follow_up")
     graph.add_conditional_edges("follow_up", _route_after_follow_up)
