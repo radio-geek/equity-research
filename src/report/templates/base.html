@@ -6,6 +6,18 @@
   <!-- CSS is injected via WeasyPrint stylesheets in report_generator -->
 </head>
 <body>
+  <button id="dl-btn" onclick="downloadReport()">&#11015; Download Report</button>
+  <script>
+    function downloadReport() {
+      var html = document.documentElement.outerHTML;
+      var blob = new Blob([html], {type: 'text/html'});
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'equity-report-{{ symbol }}-{{ generated_at | replace(" ", "_") | replace(":", "") }}.html';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+  </script>
   <div class="meta">
     {{ company_name }} ({{ symbol }}) · {{ exchange }} · Generated {{ generated_at }}
   </div>
