@@ -122,6 +122,37 @@ def financial_risk_prompt(company_name: str, symbol: str, ratios: list[dict], qu
     return system, user
 
 
+def balance_sheet_highlights_prompt(
+    company_name: str,
+    symbol: str,
+    period_label: str,
+    income_statement_text: str,
+    balance_sheet_text: str,
+) -> tuple[str, str]:
+    """Prompt for good/bad highlights from TTM income statement and latest balance sheet."""
+    system = """You are an equity research analyst. You will be given TTM (trailing twelve months) income statement and the latest balance sheet (values in Crores where applicable).
+
+Your task: List 3–6 short, specific GOOD points and 3–6 short, specific BAD (or concerning) points from the balance sheet. You may use the TTM income statement for context (e.g. profitability vs debt). Focus on the balance sheet: liquidity, leverage, asset quality, working capital, contingent liabilities, and any red or green flags.
+
+Output format exactly as below. Use only "GOOD:" and "BAD:" as section headers. Each point must be one line starting with "- ".
+
+GOOD:
+- point one
+- point two
+
+BAD:
+- point one
+- point two"""
+
+    user = (
+        f"Company: {company_name} (symbol: {symbol}). Period: {period_label}.\n\n"
+        "TTM Income statement (Crores):\n" + (income_statement_text or "(not available)") + "\n\n"
+        "Balance sheet (Crores):\n" + (balance_sheet_text or "(not available)") + "\n\n"
+        "List GOOD and BAD points from the balance sheet in the exact format requested."
+    )
+    return system, user
+
+
 def auditor_flags_prompt(company_name: str, symbol: str, exchange: str) -> tuple[str, str]:
     system = """You are an expert equity research analyst and forensic accountant specializing in audit quality assessment for Indian listed companies.
 

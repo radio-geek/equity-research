@@ -34,6 +34,10 @@ class ResearchState(TypedDict, total=False):
     shareholding: NotRequired[list]
     financial_ratios: NotRequired[list[dict]]
 
+    # Set by qoq_financials node (yearly + TTM trends, LLM highlights from TTM)
+    yearly_metrics: NotRequired[list[dict]]
+    qoq_highlights: NotRequired[dict]  # {"good": [...], "bad": [...]}
+
     # Research outputs (one per node)
     company_overview: str
     management_research: str

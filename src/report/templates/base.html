@@ -42,6 +42,60 @@
   </table>
   {% endif %}
 
+  {% if yearly_table and yearly_table.headers %}
+  <h1>Yearly trends + TTM</h1>
+  <p class="qoq-intro">Annual figures and trailing twelve months (TTM). Values in Crores unless noted. YoY % change highlighted.</p>
+  <table class="qoq-table">
+    <thead>
+      <tr>
+        <th>Metric</th>
+        {% for h in yearly_table.headers %}
+        <th>{{ h }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in yearly_table.rows %}
+      <tr>
+        <td class="qoq-metric-name">{{ row.metric }}</td>
+        {% for cell in row.cells %}
+        <td class="qoq-cell qoq-{{ cell.trend }}">
+          <span class="qoq-value">{{ cell.value_display }}</span>
+          {% if cell.qoq_pct is not none %}
+          <span class="qoq-pct">({{ "%+.1f" % cell.qoq_pct }}%)</span>
+          {% endif %}
+        </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if qoq_highlights and (qoq_highlights.good or qoq_highlights.bad) %}
+  <div class="qoq-highlights">
+    {% if qoq_highlights.good %}
+    <div class="qoq-highlight-good">
+      <strong>Strengths (TTM & balance sheet)</strong>
+      <ul>
+        {% for point in qoq_highlights.good %}
+        <li>{{ point | e }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+    {% if qoq_highlights.bad %}
+    <div class="qoq-highlight-bad">
+      <strong>Concerns (TTM & balance sheet)</strong>
+      <ul>
+        {% for point in qoq_highlights.bad %}
+        <li>{{ point | e }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+  {% endif %}
+
   {% if auditor_flags %}
   <h1>⚠ Auditor Flags & Qualifications</h1>
   <div class="section">{{ auditor_flags | safe }}</div>
