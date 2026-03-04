@@ -1,0 +1,297 @@
+================================================================================
+EQUITY RESEARCH PIPELINE — NODE IMPLEMENTATION DOCS
+================================================================================
+Maintained across sessions. Add a new section per node as it is implemented.
+--------------------------------------------------------------------------------
+
+================================================================================
+NODE: concall_evaluator
+File: src/nodes/concall_evaluator.py
+Data layer: src/data/concall.py (stub — not used; LLM does web search directly)
+Prompt: src/nodes/prompts.py → concall_prompt(), _last_8_quarters()
+CSS: src/report/styles.css (concall section appended at bottom)
+Report: src/report/templates/base.html (section: "Concall Evaluation")
+================================================================================
+
+WHAT THIS NODE DOES
+--------------------
+Uses the OpenAI Responses API (with built-in web_search_preview) to:
+1. Search for the last 8 quarters of earnings conference call transcripts/summaries
+   for the given NSE/BSE symbol.
+2. Fall back to BSE/NSE press releases or investor PPTs only if NO concall was held
+   (not as a supplement to an existing concall).
+3. Return structured HTML (not plain text) that is embedded directly in the report.
+
+HOW IT WORKS (flow)
+--------------------
+1. concall_evaluator() reads company_name, symbol, exchange from ResearchState
+2. Calls concall_prompt() to build (system, user) tuple
+3. concall_prompt() calls _last_8_quarters() to compute exact Indian FY quarters
+   and passes them explicitly in the prompt
+4. Passes to invoke_llm(use_web_search=True) → OpenAI Responses API
+   (max_output_tokens=16000 to prevent truncation of capex/guidance sections)
+5. _clean_html_output() strips any markdown code fences or pre-HTML preamble text
+6. _close_open_divs() auto-balances any unclosed <div> tags in LLM output
+7. Returns {"concall_evaluation": html}
+
+INDIAN FISCAL YEAR QUARTER COMPUTATION (_last_8_quarters)
+----------------------------------------------------------
+Indian FY runs April 1 – March 31. Quarters:
+  Q1 = Apr–Jun    Q2 = Jul–Sep    Q3 = Oct–Dec    Q4 = Jan–Mar
+
+_last_8_quarters() in prompts.py computes the 8 most-recently-completed quarters
+from today's date and returns them as a list of labels like "Q3 FY26 (Oct–Dec 2025)".
+These are passed explicitly in the prompt so the LLM uses the correct quarters instead
+of guessing (which caused Q2/Q3 FY26 to be skipped in early runs).
+
+The most-recently-COMPLETED quarter is determined by:
+  - If today is Apr–Jun  → current quarter is Q1 FY+1, start from Q4 FY (Jan–Mar)
+  - If today is Jul–Sep  → current quarter is Q2, start from Q1
+  - If today is Oct–Dec  → current quarter is Q3, start from Q2
+  - If today is Jan–Mar  → current quarter is Q4, start from Q3
+
+REPORT GENERATOR CHANGE
+-------------------------
+report_generator.py was updated: concall_evaluation is now passed through _as_html()
+instead of _text_to_html(). _as_html() detects if the content starts with "<" and
+passes it through unchanged; otherwise falls back to _text_to_html() for plain text.
+This means if the LLM returns HTML (expected), it's embedded as-is via Jinja2 | safe.
+
+SYSTEM PROMPT DESIGN (concall_prompt)
+--------------------------------------
+Key instructions given to the LLM:
+
+1. SEARCH STRATEGY
+   - Explicit list of 8 quarters passed in prompt (e.g. "Q3 FY26, Q2 FY26, ...")
+   - Search "{company} {symbol} concall transcript Q3 FY26" per quarter
+   - Sources tried: Trendlyne, Screener.in, company IR pages, BSE/NSE filings,
+     Moneycontrol, Economic Times, LiveMint, BusinessLine
+   - STRICT BADGE RULE: use concall-badge if a concall was held; only use
+     press-release-badge / ppt-badge if NO concall was held at all that quarter
+
+2. PER-QUARTER ANALYSIS (max 3–4 bullets per card to conserve output tokens)
+   - Revenue, EBITDA/NIM, PAT (actuals vs prior guidance)
+   - Key management commentary and tone
+   - Guidance given for next quarter/year (specific numbers)
+   - Red flags: guidance cuts, margin pressure, management changes
+
+3. HTML OUTPUT SECTION ORDER (critical for token budget)
+   The LLM is instructed to generate sections in this order:
+     a) .concall-section-header  (summary)
+     b) .concall-cards-grid      (8 quarter cards, 3–4 bullets each)
+     c) .capex-section           (MANDATORY — capex before guidance table)
+     d) .guidance-section        (guidance tracker table)
+     e) .no-concall-alerts       (missing concall warnings, if any)
+   Capex is placed BEFORE guidance to ensure it's not cut by token limits.
+   max_output_tokens=16000 is set on the API call to prevent truncation of either.
+
+4. GUIDANCE TRACKING
+   - Track guidance across all 8 quarters
+   - Classify each change as: RAISED / MAINTAINED / CUT
+   - RAISED = number moved up OR will exceed prior guidance
+   - CUT = number explicitly reduced or range lowered
+   - MAINTAINED = guidance repeated without change
+   - Flag cuts with management's stated reasoning
+
+5. MISSING CONCALL HANDLING
+   - If no concall: show red alert card with alternative disclosure found
+   - Note if management explained absence in a future concall
+
+6. OUTPUT FORMAT ENFORCEMENT
+   - Explicit: "Return ONLY valid HTML. Start with <div class='concall-section'>"
+   - Full HTML structure template provided in system prompt with exact CSS class names
+   - CSS class names listed explicitly so LLM uses them correctly
+
+USER PROMPT
+-----------
+Short — just company name, symbol, exchange, and bullet instructions:
+- Cover each of the 8 listed quarters individually
+- Track guidance changes, flag cuts
+- List capex with amounts and funding
+- Flag missing concalls
+
+HTML SECTIONS PRODUCED
+-----------------------
+1. .concall-section-header       — 1-2 sentence summary
+2. .concall-cards-grid           — 2-column grid of 8 quarter cards
+   └── .concall-card .concall-card-N  — each quarter (N=1 most recent)
+       ├── .concall-card-header       — quarter name + type badge
+       ├── <ul> highlights (max 3–4 bullets)
+       └── <p> guidance given
+3. .capex-section                — Capex & Major Developments (generated BEFORE guidance)
+   └── .capex-item               — individual project entry
+4. .guidance-section             — Guidance Tracker
+   └── .guidance-table           — cross-quarter table
+       └── cells: .guidance-raised / .guidance-cut / .guidance-maintained
+5. .no-concall-alerts            — container
+   └── .no-concall-alert         — individual missing concall box
+
+CSS CLASSES (defined in src/report/styles.css)
+----------------------------------------------
+Badge types:
+  .concall-badge       → green  (#2e7d32)
+  .press-release-badge → orange (#e65100)
+  .ppt-badge           → blue   (#1565c0)
+  .missing-badge       → red    (#c62828)
+
+Card colors (border + background):
+  card-1: blue      card-5: indigo
+  card-2: green     card-6: teal
+  card-3: orange    card-7: purple
+  card-4: pink      card-8: amber
+
+Guidance cells:
+  .guidance-raised      → green bg  (#c8e6c9), dark green text
+  .guidance-cut         → red bg    (#ffcdd2), dark red text
+  .guidance-maintained  → yellow bg (#fff9c4), dark yellow text
+
+Alert:
+  .no-concall-alert     → deep orange/red bg (#bf360c), white text
+
+BUGS FIXED (history)
+---------------------
+1. CSS bleed (blue colour in sectoral section)
+   Cause: unclosed <div> tags in LLM HTML caused capex section's blue background to
+   bleed into subsequent sections.
+   Fix: _close_open_divs() auto-appends </div> for each unclosed tag;
+        .section { color: #222; background: transparent } added as safety net.
+
+2. Wrong quarters shown (Q2/Q3 FY26 missing, random older quarters)
+   Cause: LLM was guessing Indian FY quarters without knowing the calendar.
+   Fix: _last_8_quarters() computes exact quarters in Python and passes them
+        explicitly in the prompt.
+
+3. Press-release badge used when concall existed
+   Cause: Prompt was ambiguous — LLM used press release as supplement.
+   Fix: Strict rule added: "ONLY use press-release-badge if NO concall was held."
+
+4. Capex section missing / guidance tracker missing
+   Cause: Default OpenAI Responses API output cap is 4,096 tokens; 8 cards +
+   guidance table exceeded it, truncating capex. Moving capex before guidance just
+   shifted which section got cut.
+   Fix: max_output_tokens=16000 added to client.responses.create(); cards limited
+   to 3–4 bullets each; capex section explicitly ordered BEFORE guidance table.
+
+TESTED ON
+----------
+- WAAREEENER (NSE) — 2026-03-04 (multiple runs)
+  Final run: All 8 quarters Q4 FY24–Q3 FY26 covered with correct concall badges.
+  Capex section: 4 items (Storage Cell BESS ₹8,000 Cr, Electrolyser ₹125 Cr,
+  Inverter ₹50 Cr, Kotsons acquisition ₹1,000 Cr).
+  Guidance tracker: 12 raised cells, 4 maintained cells — complete and correct.
+
+KNOWN LIMITATIONS / FUTURE IMPROVEMENTS
+-----------------------------------------
+- Data accuracy depends on OpenAI web search quality and source availability
+- Very recently listed companies (<2 years) will have fewer than 8 quarters
+- Trendlyne/Screener concall links require login; LLM uses publicly visible summaries
+- PDF rendering needs WeasyPrint system libs (Pango); falls back to HTML otherwise
+- grid-template-columns: 1fr 1fr may not render correctly in WeasyPrint PDF
+  (CSS grid support is limited in print engines) — consider switching to table layout
+  for PDF if needed in future
+================================================================================
+
+================================================================================
+NODE: auditor_flags
+File: src/nodes/auditor_flags.py
+Prompt: src/nodes/prompts.py → auditor_flags_prompt()
+CSS: src/report/styles.css (audit section appended after no-concall-reason)
+Report: src/report/templates/base.html (section: "⚠ Auditor Flags & Qualifications")
+         Placed after Financial Risk / Key Ratios, before Concall Evaluation.
+         Section is conditional — only shown if auditor_flags state field is non-empty.
+================================================================================
+
+WHAT THIS NODE DOES
+--------------------
+Uses the OpenAI Responses API (with web_search_preview) to search for and document:
+1. Auditor qualifications (qualified opinions) in annual reports — last 5 years
+2. Emphasis of matter notes
+3. Going concern doubts
+4. CARO (Companies Auditor's Report Order) qualifications
+5. Secretarial audit observations
+6. Auditor resignations / changes (red flag)
+Returns structured HTML embedded directly in the report.
+
+GRAPH WIRING
+-------------
+- Added to _fan_out_research() alongside other parallel research nodes
+- Runs in parallel with company_overview, management, financial_risk, concall_evaluator, sectoral
+- graph.add_edge("auditor_flags", "aggregate") — feeds into the aggregate step
+- state field: auditor_flags: NotRequired[str]
+
+SYSTEM PROMPT DESIGN (auditor_flags_prompt)
+--------------------------------------------
+Search strategy:
+  - "{company} {symbol} annual report auditor qualification"
+  - "{company} auditor report emphasis of matter"
+  - "{company} CARO qualification"
+  - "{company} secretarial audit observations"
+  - "{company} going concern"
+  - Checks BSE/NSE filings, Screener.in, Trendlyne, MoneyControl
+
+Per finding documented:
+  - Financial year (FY24, FY25 etc.)
+  - Type: Qualified / Emphasis / Going Concern / CARO / Secretarial / Auditor Change
+  - Exact nature of the qualification
+  - Management's response
+  - Status: RESOLVED / RECURRING / PENDING
+  - Financial impact if quantifiable
+
+Also flags:
+  - Auditor changes (Big-4 → small firm, resignation)
+  - Delayed annual report filing
+  - Restatement of financials
+  - Related-party concerns raised by auditor
+
+Output format: HTML with exact CSS classes (same approach as concall_evaluator)
+
+HTML SECTIONS PRODUCED
+-----------------------
+1. .audit-summary-bar         — 1-line red/green bar at top
+   └── .audit-has-flags       → red (#b71c1c) if issues found
+   └── .audit-clean-bar       → green (#2e7d32) if clean
+2. .audit-flag-card           — one card per qualification finding
+   ├── .audit-flag-header     — FY, badge, status chip
+   ├── .audit-flag-badge + badge-* class  — type indicator
+   │     badge-qualified / badge-emphasis / badge-going-concern /
+   │     badge-caro / badge-secretarial / badge-auditor-change
+   ├── .audit-flag-status + status-* class
+   │     status-resolved (#c8e6c9 green) / status-recurring (red) / status-pending (orange)
+   └── .audit-flag-body
+         .audit-flag-mgmt    — management response (italic, dark grey)
+         .audit-flag-impact  — financial impact (bold red)
+3. .audit-clean               — green box shown when no qualifications found
+4. .audit-overview            — bottom summary paragraph
+
+CSS CLASS SUMMARY
+------------------
+.audit-has-flags       → red summary bar
+.audit-clean-bar       → green summary bar
+.badge-qualified       → dark red (#b71c1c)
+.badge-emphasis        → deep orange (#e65100)
+.badge-going-concern   → purple (#4a148c)
+.badge-caro            → blue (#1565c0)
+.badge-secretarial     → teal (#004d40)
+.badge-auditor-change  → pink (#880e4f)
+.status-resolved       → green chip
+.status-recurring      → red chip (most alarming)
+.status-pending        → orange chip
+
+TESTED ON
+----------
+- KERNEX (NSE) — 2026-03-04
+  Result: 3 qualifications found across FY24-FY25
+  - FY25 Qualified Opinion (PENDING): ₹12.76 Cr impairment on US subsidiary AGI not recognized;
+    profit overstated by ₹12.76 Cr
+  - FY25 Emphasis of Matter (PENDING): trade receivables >3yr old, bank guarantees under
+    arbitration, ₹3.92 Cr provision for JV investment
+  - FY24 Qualified Opinion (RESOLVED): same AGI impairment issue — marked resolved since
+    management response addressed it in FY24
+
+KNOWN LIMITATIONS / FUTURE IMPROVEMENTS
+-----------------------------------------
+- Relies on LLM web search; older annual reports (pre-FY22) may not be indexed
+- CARO qualifications may be harder to find online vs. reading the actual PDF
+- Auditor resignation details may be partial if not well covered by financial press
+- Consider adding a direct BSE filings scraper for annual report PDFs in a future version
+================================================================================

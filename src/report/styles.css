@@ -46,10 +46,291 @@ tr:nth-child(even) {
 
 .section {
   margin-bottom: 1.5em;
+  background: transparent;
+  color: #222;
 }
 
 .meta {
   color: #555;
   font-size: 10pt;
   margin-bottom: 1em;
+}
+
+/* ============================================================
+   Concall Evaluation Section
+   ============================================================ */
+
+.concall-section-header {
+  font-size: 10.5pt;
+  color: #37474f;
+  margin-bottom: 1em;
+  padding: 0.6em 0.8em;
+  background: #f8f9fa;
+  border-left: 4px solid #90a4ae;
+  border-radius: 4px;
+}
+
+.concall-cards-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 1em 0 1.5em 0;
+}
+
+.concall-card {
+  border-radius: 7px;
+  padding: 12px 14px;
+  border-left: 5px solid;
+  break-inside: avoid;
+  font-size: 9.5pt;
+}
+
+.concall-card-1 { background: #e3f2fd; border-color: #1565c0; }
+.concall-card-2 { background: #e8f5e9; border-color: #2e7d32; }
+.concall-card-3 { background: #fff3e0; border-color: #e65100; }
+.concall-card-4 { background: #fce4ec; border-color: #880e4f; }
+.concall-card-5 { background: #e8eaf6; border-color: #283593; }
+.concall-card-6 { background: #e0f2f1; border-color: #004d40; }
+.concall-card-7 { background: #f3e5f5; border-color: #4a148c; }
+.concall-card-8 { background: #fff8e1; border-color: #f57f17; }
+
+.concall-card-header {
+  font-weight: bold;
+  font-size: 10.5pt;
+  margin-bottom: 7px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.concall-card ul {
+  margin: 0.3em 0;
+  padding-left: 1.2em;
+}
+
+.concall-card li {
+  margin-bottom: 3px;
+}
+
+.concall-card p {
+  margin: 0.4em 0 0 0;
+  color: #37474f;
+}
+
+.concall-type-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 7.5pt;
+  font-weight: bold;
+  color: white;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.concall-badge      { background: #2e7d32; }
+.press-release-badge{ background: #e65100; }
+.ppt-badge          { background: #1565c0; }
+.missing-badge      { background: #c62828; }
+
+/* Guidance Tracker */
+.guidance-section {
+  margin: 1.5em 0;
+}
+
+.guidance-section h3 {
+  font-size: 11pt;
+  margin-bottom: 0.5em;
+  color: #263238;
+}
+
+.guidance-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 8.5pt;
+}
+
+.guidance-table th {
+  background: #37474f;
+  color: white;
+  padding: 6px 8px;
+  text-align: center;
+  font-size: 8pt;
+}
+
+.guidance-table td {
+  padding: 5px 7px;
+  text-align: center;
+  border: 1px solid #cfd8dc;
+  vertical-align: middle;
+}
+
+.guidance-raised     { background: #c8e6c9 !important; color: #1b5e20; font-weight: bold; }
+.guidance-cut        { background: #ffcdd2 !important; color: #b71c1c; font-weight: bold; }
+.guidance-maintained { background: #fff9c4 !important; color: #7c6f00; }
+
+/* Capex Section */
+.capex-section {
+  margin: 1.5em 0;
+  padding: 12px 14px;
+  background: #e3f2fd;
+  border-left: 5px solid #1565c0;
+  border-radius: 6px;
+}
+
+.capex-section h3 {
+  font-size: 11pt;
+  color: #1565c0;
+  margin: 0 0 0.6em 0;
+}
+
+.capex-item {
+  background: white;
+  padding: 7px 11px;
+  margin: 6px 0;
+  border-radius: 4px;
+  border-left: 3px solid #42a5f5;
+  font-size: 9.5pt;
+}
+
+.capex-amount  { font-weight: bold; color: #1565c0; }
+.capex-funding { color: #546e7a; font-size: 9pt; }
+
+/* No-Concall Alerts */
+.no-concall-alerts { margin: 1em 0; }
+
+.no-concall-alert {
+  background: #bf360c;
+  color: white;
+  padding: 9px 13px;
+  border-radius: 6px;
+  margin: 7px 0;
+  font-weight: bold;
+  font-size: 9.5pt;
+}
+
+.no-concall-reason {
+  font-weight: normal;
+  font-size: 9pt;
+  margin-top: 4px;
+  opacity: 0.92;
+}
+
+/* ============================================================
+   Auditor Flags Section
+   ============================================================ */
+
+.audit-section {
+  margin: 0;
+}
+
+.audit-summary-bar {
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-weight: bold;
+  font-size: 10.5pt;
+  margin-bottom: 1em;
+}
+
+.audit-has-flags {
+  background: #b71c1c;
+  color: white;
+}
+
+.audit-clean-bar {
+  background: #2e7d32;
+  color: white;
+}
+
+.audit-clean {
+  background: #e8f5e9;
+  border-left: 5px solid #2e7d32;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 10pt;
+}
+
+.audit-flag-card {
+  border: 1.5px solid #ef9a9a;
+  border-left: 5px solid #c62828;
+  border-radius: 6px;
+  margin: 10px 0;
+  overflow: hidden;
+  break-inside: avoid;
+}
+
+.audit-flag-header {
+  background: #ffebee;
+  padding: 8px 12px;
+  font-weight: bold;
+  font-size: 10pt;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid #ef9a9a;
+}
+
+.audit-flag-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 7.5pt;
+  font-weight: bold;
+  color: white;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.badge-qualified      { background: #b71c1c; }
+.badge-emphasis       { background: #e65100; }
+.badge-going-concern  { background: #4a148c; }
+.badge-caro           { background: #1565c0; }
+.badge-secretarial    { background: #004d40; }
+.badge-auditor-change { background: #880e4f; }
+
+.audit-flag-status {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 7.5pt;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-left: auto;
+}
+
+.status-resolved  { background: #c8e6c9; color: #1b5e20; }
+.status-recurring { background: #b71c1c; color: white; }
+.status-pending   { background: #ff6f00; color: white; }
+
+.audit-flag-body {
+  padding: 10px 14px;
+  font-size: 9.5pt;
+  background: white;
+}
+
+.audit-flag-body p {
+  margin: 0.3em 0;
+}
+
+.audit-flag-mgmt {
+  color: #37474f;
+  font-style: italic;
+}
+
+.audit-flag-impact {
+  color: #b71c1c;
+  font-weight: bold;
+}
+
+.audit-overview {
+  margin-top: 1em;
+  padding: 10px 14px;
+  background: #fafafa;
+  border-left: 4px solid #90a4ae;
+  border-radius: 4px;
+  font-size: 9.5pt;
+  color: #37474f;
 }

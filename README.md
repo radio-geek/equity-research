@@ -72,6 +72,19 @@ The PDF is saved under the `reports/` directory as `<SYMBOL>_<timestamp>.pdf` (e
 - `reports/` – Generated PDFs.
 - `run.py` – CLI entrypoint.
 
+## Contributing / Node Development
+
+When you implement or significantly change a node, update **`node-docs.txt`** at the project root before finishing. Each entry should cover:
+
+- File locations (node, prompt, CSS, template)
+- What the node does and how it works (data flow)
+- Prompt design decisions (search strategy, output format instructions, HTML structure)
+- CSS classes produced and their visual meaning
+- Known limitations and future improvements
+- Test results (which symbol, what date, what the output showed)
+
+This file is maintained across sessions so future contributors (and AI assistants) can understand the system without re-reading the full code.
+
 ## License
 
 Private / use as you see fit.
