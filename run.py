@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-"""CLI: run equity research for a symbol, then follow-up loop until user says 'I am Done'."""
+"""CLI: run equity research for a symbol; single invoke produces report."""
 
 import argparse
 import uuid
-
-from langgraph.types import Command
 
 from src.graph import build_graph
 
@@ -31,23 +29,11 @@ def main() -> None:
     print(f"Running research for {symbol} ({exchange})...")
     result = graph.invoke(initial_state, config=config)
 
-    while True:
-        interrupt_payload = getattr(result, "__interrupt__", None) or (result if isinstance(result, dict) else {}).get("__interrupt__")
-        if interrupt_payload is not None:
-            prompt = interrupt_payload if isinstance(interrupt_payload, str) else "Your input:"
-            try:
-                user_input = input(f"\n{prompt}\n> ").strip()
-            except EOFError:
-                user_input = "I am Done"
-            result = graph.invoke(Command(resume=user_input), config=config)
-            continue
-
-        values = result if isinstance(result, dict) else getattr(result, "values", result)
-        if isinstance(values, dict) and values.get("report_path"):
-            print(f"\nReport saved: {values['report_path']}")
-            return
+    values = result if isinstance(result, dict) else getattr(result, "values", result)
+    if isinstance(values, dict) and values.get("report_path"):
+        print(f"\nReport saved: {values['report_path']}")
+    else:
         print("\nSession ended.")
-        return
 
 
 if __name__ == "__main__":
