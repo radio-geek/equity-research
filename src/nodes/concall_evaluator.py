@@ -36,6 +36,14 @@ def _close_open_divs(html: str) -> str:
     return html
 
 
+def _extract_section_title(html: str) -> str:
+    """Read data-section-title from the outermost div; default to 'Concall Evaluation'."""
+    m = re.search(r'data-section-title=["\']([^"\']+)["\']', html)
+    title = m.group(1) if m else "Concall Evaluation"
+    logger.debug("concall_evaluator: section title = %r", title)
+    return title
+
+
 def concall_evaluator(state: ResearchState) -> dict[str, Any]:
     """Fetch and analyze last 8 quarters of concalls; return HTML-formatted evaluation."""
     company_name = state.get("company_name") or state.get("symbol") or ""
@@ -52,6 +60,7 @@ def concall_evaluator(state: ResearchState) -> dict[str, Any]:
 
     html = _clean_html_output(html)
     html = _close_open_divs(html)
+    section_title = _extract_section_title(html)
 
-    logger.info("concall_evaluator: done, final HTML length=%d chars", len(html))
-    return {"concall_evaluation": html}
+    logger.info("concall_evaluator: done, final HTML length=%d chars, title=%r", len(html), section_title)
+    return {"concall_evaluation": html, "concall_section_title": section_title}

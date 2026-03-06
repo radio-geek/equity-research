@@ -43,6 +43,7 @@ class ResearchState(TypedDict, total=False):
     management_research: str
     financial_risk: str
     concall_evaluation: str
+    concall_section_title: NotRequired[str]  # "Concall Evaluation" or "Company Updates" (SME/no-concall)
     auditor_flags: NotRequired[str]
     sectoral_analysis: str
     executive_summary: NotRequired[str]

@@ -290,90 +290,176 @@ def concall_prompt(company_name: str, symbol: str, exchange: str) -> tuple[str, 
 INDIAN FISCAL YEAR: April 1 – March 31.
   Q1 = Apr–Jun | Q2 = Jul–Sep | Q3 = Oct–Dec | Q4 = Jan–Mar
 
+═══════════════════════════════════════════════════════════
+STEP 1 — DETECT COMPANY TYPE (do this FIRST via web search)
+═══════════════════════════════════════════════════════════
+Search: "{company_name} {symbol} SME IPO NSE SME BSE SME"
+Also check: company market cap, listing board, whether results are quarterly or half-yearly.
+
+Classify the company as one of:
+  A) MAINBOARD_WITH_CONCALLS   — Listed on NSE/BSE mainboard AND holds quarterly concalls
+  B) MAINBOARD_NO_CONCALLS     — Mainboard listed but never/rarely holds concalls
+  C) SME_COMPANY               — Listed on NSE Emerge or BSE SME platform
+
+SME indicators: "NSE Emerge", "BSE SME", market cap typically < ₹500 Cr, half-yearly results filing,
+no regular concall history, results published as BSE filings without management call.
+
+═══════════════════════════════════════════════════════════
+STEP 2A — IF MAINBOARD_WITH_CONCALLS: use CONCALL FORMAT
+═══════════════════════════════════════════════════════════
 THE EXACT 8 QUARTERS YOU MUST COVER (latest first):
 {quarters_numbered}
 
 RULE — CONCALL vs PRESS RELEASE:
-  ★ ALWAYS search for the earnings conference call (concall) FIRST for every quarter.
-  ★ Use badge "concall-badge" if a concall was held — even if you only find a summary.
-  ★ Use "press-release-badge" ONLY if you confirm NO concall was held and only a BSE/NSE press release exists.
+  ★ ALWAYS search for the earnings conference call FIRST for every quarter.
+  ★ Use badge "concall-badge" if a concall was held.
+  ★ Use "press-release-badge" ONLY if NO concall was held and only a BSE/NSE press release exists.
   ★ Use "ppt-badge" ONLY if only an investor presentation exists and no concall was held.
   ★ Use "missing-badge" if nothing was found for that quarter.
   ★ NEVER substitute a press release for a concall when the company did hold one.
 
-SEARCH STRATEGY (for EACH quarter in the list above):
-1. Search: "{company_name} {symbol} concall Q3 FY26" — replace with each quarter
-2. Sources: Trendlyne, Screener.in, company IR page, BSE filings, Moneycontrol, Economic Times, LiveMint
-3. If no concall found after searching: look for BSE press release / investor PPT as fallback only
-
-ANALYSIS REQUIRED per quarter (keep each card to MAX 3–4 bullet points for brevity):
-- Revenue, EBITDA/NIM, PAT vs any prior guidance (1 line)
+ANALYSIS per quarter (MAX 3–4 bullets per card):
+- Revenue, EBITDA/NIM, PAT vs prior guidance (1 line)
 - 1–2 key management highlights
 - Guidance given for next quarter/year (specific numbers)
-- Red flags if any: guidance cuts, margin pressure, management changes
+- Red flags: guidance cuts, margin pressure, management changes
 
-CAPEX & MAJOR DEVELOPMENTS (MANDATORY — generate this section BEFORE the guidance table):
-- List ALL capex announcements, factory/plant expansions, acquisitions, fundraising (QIP/NCD/rights)
-  across all 8 quarters with amounts and funding source
-- This section MUST always be present even if content is minimal
+CAPEX & MAJOR DEVELOPMENTS (MANDATORY — generate BEFORE guidance table):
+- List ALL capex, expansions, acquisitions, fundraising with amounts and funding source
+- Always present even if minimal
 
 GUIDANCE TRACKING:
-- Track guidance across all 8 quarters
-- Classification: RAISED (number moved up or "will exceed") / CUT (number moved down) / MAINTAINED (same range)
-- Use class="guidance-raised" / "guidance-cut" / "guidance-maintained" on table cells
+- RAISED / CUT / MAINTAINED classification across all 8 quarters
+- Use class="guidance-raised" / "guidance-cut" / "guidance-maintained"
 
-MISSING CONCALL:
-- If a quarter genuinely had NO concall, show a .no-concall-alert with what was found (press release/PPT/nothing)
-
-CRITICAL OUTPUT FORMAT:
-Return ONLY valid HTML. Start with <div class="concall-section"> and end with </div>.
-NO markdown, NO code blocks, NO text outside HTML tags.
-Close every opened <div> tag — the HTML MUST be balanced.
-
-CSS classes to use (pre-styled):
-concall-section | concall-section-header | concall-cards-grid
-concall-card concall-card-N (N=1 most recent → N=8 oldest)
-concall-card-header | concall-type-badge
-concall-badge | press-release-badge | ppt-badge | missing-badge
-capex-section | capex-item | capex-amount | capex-funding
-guidance-section | guidance-table | guidance-raised | guidance-cut | guidance-maintained
-no-concall-alerts | no-concall-alert | no-concall-reason
-
-HTML STRUCTURE (follow this ORDER exactly — capex comes BEFORE guidance table):
-<div class="concall-section">
+OUTPUT for MAINBOARD_WITH_CONCALLS:
+<div class="concall-section" data-section-title="Concall Evaluation">
   <div class="concall-section-header">Summary sentence.</div>
   <div class="concall-cards-grid">
     <div class="concall-card concall-card-1">
       <div class="concall-card-header">{quarters[0]}<span class="concall-type-badge concall-badge">Concall</span></div>
-      <ul><li><strong>Revenue:</strong> ₹X Cr (+X% YoY)</li><li>Key highlight</li><li>Key highlight 2</li></ul>
+      <ul><li><strong>Revenue:</strong> ₹X Cr (+X% YoY)</li><li>Key highlight</li><li>Guidance</li></ul>
       <p><em>Guidance: ...</em></p>
     </div>
-    <!-- concall-card-2 through concall-card-8 — same structure, max 3–4 bullets each -->
+    <!-- concall-card-2 through concall-card-8 -->
   </div>
   <div class="capex-section">
     <h3>Capital Expenditure &amp; Major Developments</h3>
-    <div class="capex-item"><strong>Project name</strong> — <span class="capex-amount">₹X,XXX Cr</span> announced Q2 FY25<br><span class="capex-funding">Funding: internal accruals + term loan</span></div>
+    <div class="capex-item"><strong>Project</strong> — <span class="capex-amount">₹X Cr</span><br><span class="capex-funding">Funding: ...</span></div>
   </div>
   <div class="guidance-section">
     <h3>Guidance Tracker</h3>
     <table class="guidance-table">
       <thead><tr><th>Metric</th>{guidance_header_cols}<th>Trend</th></tr></thead>
-      <tbody><tr><td><strong>Metric name</strong></td><td>value</td><td class="guidance-maintained">value</td><td class="guidance-cut">value</td><td class="guidance-cut">CUT ▼</td></tr></tbody>
+      <tbody><tr><td><strong>Metric</strong></td><td class="guidance-raised">value</td><td class="guidance-maintained">value</td><td class="guidance-cut">CUT ▼</td></tr></tbody>
     </table>
     <p style="font-size:9pt;color:#555;">Green=Raised | Red=Cut | Yellow=Maintained</p>
   </div>
-  <div class="no-concall-alerts">
-    <!-- only include if at least one quarter had no concall; omit entire div otherwise -->
+  <div class="no-concall-alerts"><!-- only if quarters had no concall --></div>
+</div>
+
+═══════════════════════════════════════════════════════════
+STEP 2B — IF SME_COMPANY or MAINBOARD_NO_CONCALLS: use COMPANY UPDATES FORMAT
+═══════════════════════════════════════════════════════════
+SME companies typically:
+  • Report half-yearly (H1 = Apr–Sep, H2 = Oct–Mar) instead of quarterly
+  • May hold occasional concalls — ALWAYS check for these first!
+  • Board meeting outcome letters on BSE are the primary disclosure method
+
+HALF-YEARLY vs ANNUAL RESULTS — CRITICAL DISTINCTION:
+  ★ H1 results (Apr–Sep) = covers only the first 6 months of the fiscal year
+  ★ H2 results (Oct–Mar) = covers only the second 6 months of the fiscal year
+  ★ Annual/Full-year results (Apr–Mar) = covers the FULL 12 months — DO NOT use this for H2 card
+  ★ If BSE filing title says "Half Yearly Results" or "Six Months Ended September" → H1
+  ★ If BSE filing title says "Half Yearly Results" or "Six Months Ended March" → H2
+  ★ If BSE filing title says "Annual Results" or "Year Ended March" → this is FULL YEAR, show it
+    as a separate "Full Year FY25" card, NOT as H2
+  ★ Use H2-specific revenue/PAT from the H2-only filing, not from the annual report
+
+WHAT TO SEARCH FOR per period (in priority order):
+1. Concall/earnings call — search "{company} {period} concall", "{company} earnings call {year}"
+   → use badge sme-concall-badge if found; extract management commentary
+2. Board meeting outcome letter (BSE filing after results) — use badge sme-board-badge
+3. Investor presentation / PPT — search "{company} investor presentation {period}", "{company} PPT BSE"
+   → use badge sme-ppt-badge if found
+4. Half-yearly results filing (standalone H1 or H2 filing, NOT annual) — use badge sme-results-badge
+5. Management interview (news/YouTube) — use badge sme-interview-badge
+6. Nothing found — use badge sme-missing-badge
+
+PERIODS TO COVER (latest first, adapt to half-yearly if that's what the company reports):
+- Show up to 6 most recent reporting periods (H1/H2 or quarterly where available)
+- Label cards as "H1 FY26 (Apr–Sep 2025)", "H2 FY25 (Oct 2024–Mar 2025)", etc. for half-yearly
+- Or "Q3 FY26 (Oct–Dec 2025)" etc. if the company does file quarterly
+- If both a concall AND results filing exist for the same period, show BOTH badges on one card
+
+ANALYSIS per period card (MAX 3–4 bullets):
+- Revenue and PAT — use HALF-YEARLY figures (6-month period), not full-year figures
+- Key business highlight from concall transcript, board letter, or PPT
+- Any guidance or outlook statement
+- Red flag if any (auditor note, revenue decline, promoter pledge etc.)
+
+CAPEX & DEVELOPMENTS:
+- List any capex, expansion, acquisition noted in any filing, PPT, or concall
+- Mark "No significant capex announced" if nothing found
+
+SOURCES USED section (MANDATORY for SME):
+- List exactly what sources were found for each period (BSE filing title, article, concall date)
+
+OUTPUT for SME_COMPANY or MAINBOARD_NO_CONCALLS:
+<div class="concall-section sme-section" data-section-title="Company Updates">
+  <div class="sme-summary-bar">
+    <span class="sme-listing-badge">SME Listed</span>
+    One sentence: reporting frequency, concall history, primary disclosure method.
   </div>
-</div>"""
+  <div class="sme-updates-grid">
+    <div class="sme-update-card">
+      <div class="sme-card-header">
+        H1 FY26 (Apr–Sep 2025)
+        <span class="sme-badge sme-results-badge">Results Filing</span>
+      </div>
+      <ul>
+        <li><strong>Revenue:</strong> ₹X Cr (+X% YoY)</li>
+        <li>Key highlight from board letter or filing</li>
+        <li>Any guidance or outlook</li>
+      </ul>
+    </div>
+    <!-- repeat for each period, max 6 cards -->
+  </div>
+  <div class="sme-capex-section">
+    <h3>Capex &amp; Key Developments</h3>
+    <div class="sme-capex-item">Description — amount if known</div>
+  </div>
+  <div class="sme-sources-section">
+    <h3>Information Sources</h3>
+    <ul>
+      <li><strong>H1 FY26:</strong> BSE Board Meeting Outcome dated DD-MM-YYYY</li>
+      <li><strong>H2 FY25:</strong> Half-yearly results press release, BSE filing</li>
+    </ul>
+  </div>
+</div>
+
+═══════════════════════════════════════════════════════════
+UNIVERSAL RULES (apply to ALL output types)
+═══════════════════════════════════════════════════════════
+- Return ONLY valid HTML. NO markdown, NO code blocks, NO text outside HTML tags.
+- The outermost tag MUST be <div class="concall-section" data-section-title="...">
+- Set data-section-title="Concall Evaluation" for MAINBOARD_WITH_CONCALLS
+- Set data-section-title="Company Updates" for SME_COMPANY or MAINBOARD_NO_CONCALLS
+- Close every opened <div> tag — HTML MUST be balanced."""
 
     quarters_list = "\n".join(f"  {i+1}. {q}" for i, q in enumerate(quarters))
     user = (
         f"Company: {company_name} (Symbol: {symbol}, Exchange: {exchange})\n\n"
-        f"Search for earnings conference calls for each of these 8 quarters (latest first):\n{quarters_list}\n\n"
-        "For EACH quarter: first search for a concall; only fall back to press release/PPT if you confirm no concall was held.\n"
-        "Cover actuals (Revenue, EBITDA, PAT), guidance given, key highlights, and capex/developments.\n"
-        "Track guidance changes across quarters — flag cuts with management's stated reasoning.\n"
+        f"STEP 1: First determine if this is an SME-listed company or a mainboard company.\n"
+        f"Search: '{company_name} {symbol} SME NSE Emerge BSE SME listing'\n\n"
+        f"STEP 2: Based on the company type, generate the appropriate HTML:\n"
+        f"  • If mainboard with concalls: cover these 8 quarters with the CONCALL FORMAT:\n{quarters_list}\n"
+        f"  • If SME or no-concall mainboard: cover available half-yearly/quarterly periods with COMPANY UPDATES FORMAT\n\n"
+        "For mainboard companies: first search for a concall each quarter; only fall back to press release/PPT if no concall was held.\n"
+        "For SME companies: for EACH period, first search for a concall ('{company} H1/H2 FY2x concall'), then PPT, then board letter, then results filing.\n"
+        "CRITICAL for half-yearly SME: H2 results = Oct–Mar half only (NOT full-year annual results). Annual results = show as separate full-year card.\n"
+        "Always include capex/developments and sources (for SME).\n"
+        "Set data-section-title='Concall Evaluation' (mainboard with concalls) or 'Company Updates' (SME/no-concall).\n"
         "Return the complete structured HTML only."
     )
     return system, user
