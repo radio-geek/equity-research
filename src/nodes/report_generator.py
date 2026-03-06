@@ -58,6 +58,7 @@ def _render_html(state: ResearchState, template_dir: Path, styles_path: Path) ->
         financial_risk=_text_to_html(state.get("financial_risk") or ""),
         auditor_flags=_as_html(state.get("auditor_flags") or ""),
         concall_evaluation=_as_html(state.get("concall_evaluation") or ""),
+        concall_section_title=state.get("concall_section_title") or "Concall Evaluation",
         sectoral_analysis=_text_to_html(state.get("sectoral_analysis") or ""),
         financial_ratios=state.get("financial_ratios") or [],
         yearly_metrics=state.get("yearly_metrics") or [],
