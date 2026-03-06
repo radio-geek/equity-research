@@ -1,4 +1,4 @@
-"""LangGraph definition: parallel research, aggregate, follow-up loop, report on 'I am Done'."""
+"""LangGraph definition: parallel research, aggregate, then report (no follow-up)."""
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ from src.nodes.auditor_flags import auditor_flags
 from src.nodes.company_overview import company_overview
 from src.nodes.concall_evaluator import concall_evaluator
 from src.nodes.financial_risk import financial_risk
-from src.nodes.follow_up import follow_up, should_generate_report
 from src.nodes.management import management
 from src.nodes.qoq_financials import qoq_financials
 from src.nodes.report_generator import report_generator
@@ -32,13 +31,6 @@ def _fan_out_research(_state: ResearchState) -> list[str]:
     ]
 
 
-def _route_after_follow_up(state: ResearchState) -> str:
-    """If user said 'I am Done', go to report_generator; else loop to follow_up."""
-    if should_generate_report(state):
-        return "report_generator"
-    return "follow_up"
-
-
 def build_graph():
     """Build and compile the research graph with checkpointer."""
     graph = StateGraph(ResearchState)
@@ -52,7 +44,6 @@ def build_graph():
     graph.add_node("sectoral", sectoral)
     graph.add_node("qoq_financials", qoq_financials)
     graph.add_node("aggregate", aggregate)
-    graph.add_node("follow_up", follow_up)
     graph.add_node("report_generator", report_generator)
 
     graph.add_edge(START, "resolve_company")
@@ -66,8 +57,7 @@ def build_graph():
     graph.add_edge("sectoral", "aggregate")
     graph.add_edge("qoq_financials", "aggregate")
 
-    graph.add_edge("aggregate", "follow_up")
-    graph.add_conditional_edges("follow_up", _route_after_follow_up)
+    graph.add_edge("aggregate", "report_generator")
     graph.add_edge("report_generator", END)
 
     memory = MemorySaver()

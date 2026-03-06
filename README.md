@@ -1,6 +1,6 @@
 # Equity Research Agent System
 
-Equity research for NSE/BSE listed Indian stocks using a LangGraph-based multi-agent system. Agents cover company overview, management, financial risk, concall evaluation (stubbed), and sectoral view; you can ask follow-up questions and generate a PDF report when done.
+Equity research for NSE/BSE listed Indian stocks using a LangGraph-based multi-agent system. Agents cover company overview, management, financial risk, concall evaluation (stubbed), and sectoral view; the pipeline runs to a single report. A CLI and a web UI (frontend + FastAPI backend) are provided.
 
 ## Prerequisites
 
@@ -36,7 +36,7 @@ Equity research for NSE/BSE listed Indian stocks using a LangGraph-based multi-a
 
 ### Visualizing runs with LangSmith
 
-To see each step of the graph (resolve → parallel research → aggregate → follow-up → report) in [LangSmith](https://smith.langchain.com), add to your `.env`:
+To see each step of the graph (resolve → parallel research → aggregate → report) in [LangSmith](https://smith.langchain.com), add to your `.env`:
 
 - `LANGSMITH_TRACING=true`
 - `LANGSMITH_API_KEY=ls__...` (create an API key in LangSmith settings)
@@ -52,9 +52,31 @@ Run research for a symbol (NSE):
 python run.py --symbol RELIANCE --exchange NSE
 ```
 
-The graph runs all research agents (company overview, management, financial risk, concall stub, sectoral), then prints a prompt. Type a question about the research and press Enter to get an answer, or type **I am Done** (case-insensitive) to generate the PDF report and exit.
+The graph runs all research agents (company overview, management, financial risk, concall stub, sectoral), then generates the report and exits. The report is saved under the `reports/` directory as `<SYMBOL>_<timestamp>.pdf` or `.html` (e.g. `reports/RELIANCE_20250303_143022.pdf`).
 
-The PDF is saved under the `reports/` directory as `<SYMBOL>_<timestamp>.pdf` (e.g. `reports/RELIANCE_20250303_143022.pdf`).
+### Running the UI
+
+Run the backend and frontend in **two separate terminals**. The frontend proxies API requests to the backend.
+
+**Terminal 1 – Backend** (from repo root; use the venv’s Python so the `nse` package is found):
+
+```bash
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt   # if not already done
+PYTHONPATH=. python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Using `python -m uvicorn` ensures the same interpreter (and venv) that has `nse` installed is used.
+
+**Terminal 2 – Frontend**:
+
+```bash
+cd frontend
+npm install   # first time only
+npm run dev
+```
+
+Then open **http://localhost:5173**. Use the search bar to find a stock (NSE symbol or company name); select a suggestion to go to `/:symbol/report`. The report is generated in the background and shown when ready.
 
 ## Data sources
 
@@ -66,11 +88,13 @@ The PDF is saved under the `reports/` directory as `<SYMBOL>_<timestamp>.pdf` (e
 ## Project structure
 
 - `src/` – Core code: state schema, graph, config.
-- `src/nodes/` – LangGraph nodes (resolve company, overview, management, financial risk, concall stub, sectoral, aggregate, follow-up, report generator).
+- `src/nodes/` – LangGraph nodes (resolve company, overview, management, financial risk, concall stub, sectoral, aggregate, report generator).
 - `src/data/` – Data adapters (NSE client, financials, filings).
 - `src/report/` – Jinja2 templates and CSS for the PDF report.
 - `reports/` – Generated PDFs.
 - `run.py` – CLI entrypoint.
+- `backend/` – FastAPI app: symbol suggest (`NSE.lookup`), report job start/status/HTML.
+- `frontend/` – Vite + React + TypeScript: landing search, report page with loader.
 
 ## Contributing / Node Development
 
