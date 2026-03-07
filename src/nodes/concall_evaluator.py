@@ -1,66 +1,91 @@
-"""Concall evaluator node: LLM-powered analysis of last 8 quarters of conference calls."""
+"""Concall evaluator node: LLM-powered analysis of last 8 quarters; returns structured JSON."""
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from typing import Any
 
 from src.state import ResearchState
 
-from .prompts import concall_prompt, invoke_llm
+from .prompts import concall_structured_prompt, invoke_llm
 
 logger = logging.getLogger(__name__)
 
 
-def _clean_html_output(text: str) -> str:
-    """Strip markdown code fences and any non-HTML preamble from LLM output."""
+def _strip_json_preamble(text: str) -> str:
+    """Strip markdown code fences and any non-JSON preamble."""
     text = text.strip()
-    text = re.sub(r"^```(?:html)?\s*", "", text, flags=re.MULTILINE)
+    text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.MULTILINE)
     text = re.sub(r"\s*```\s*$", "", text, flags=re.MULTILINE)
-    idx = text.find("<div")
+    idx = text.find("{")
     if idx > 0:
-        logger.debug("Stripping %d chars of preamble before first <div", idx)
+        logger.debug("Stripping %d chars of preamble before first {", idx)
         text = text[idx:]
     return text.strip()
 
 
-def _close_open_divs(html: str) -> str:
-    """Balance unclosed <div> tags to prevent CSS bleeding into subsequent sections."""
-    opens = html.count("<div")
-    closes = html.count("</div>")
-    diff = opens - closes
-    if diff > 0:
-        logger.warning("Concall HTML has %d unclosed <div> tag(s); auto-closing.", diff)
-        html = html + "</div>" * diff
-    return html
-
-
-def _extract_section_title(html: str) -> str:
-    """Read data-section-title from the outermost div; default to 'Concall Evaluation'."""
-    m = re.search(r'data-section-title=["\']([^"\']+)["\']', html)
-    title = m.group(1) if m else "Concall Evaluation"
-    logger.debug("concall_evaluator: section title = %r", title)
-    return title
+def _validate_concall_shape(data: dict) -> bool:
+    """Check minimal required keys for report schema."""
+    if not isinstance(data, dict):
+        return False
+    t = data.get("type")
+    if t not in ("mainboard_concall", "sme_updates"):
+        return False
+    if not data.get("sectionTitle"):
+        data["sectionTitle"] = "Concall Evaluation" if t == "mainboard_concall" else "Company Updates"
+    if "cards" not in data:
+        data["cards"] = []
+    return True
 
 
 def concall_evaluator(state: ResearchState) -> dict[str, Any]:
-    """Fetch and analyze last 8 quarters of concalls; return HTML-formatted evaluation."""
+    """Fetch and analyze last 8 quarters of concalls; return structured JSON for report payload."""
     company_name = state.get("company_name") or state.get("symbol") or ""
     symbol = state.get("symbol") or ""
     exchange = state.get("exchange") or "NSE"
 
     logger.info("concall_evaluator: starting for %s (%s)", symbol, exchange)
 
-    system, user = concall_prompt(company_name, symbol, exchange)
+    system, user = concall_structured_prompt(company_name, symbol, exchange)
 
     logger.debug("concall_evaluator: invoking LLM with web search")
-    html = invoke_llm(system, user, use_web_search=True)
-    logger.debug("concall_evaluator: raw LLM output length=%d chars", len(html))
+    raw = invoke_llm(system, user, use_web_search=True)
+    logger.debug("concall_evaluator: raw LLM output length=%d chars", len(raw or ""))
 
-    html = _clean_html_output(html)
-    html = _close_open_divs(html)
-    section_title = _extract_section_title(html)
+    concall_structured = None
+    concall_evaluation = ""
+    if raw:
+        stripped = _strip_json_preamble(raw)
+        try:
+            data = json.loads(stripped)
+            if _validate_concall_shape(data):
+                concall_structured = data
+                # Brief text for aggregate node (executive summary)
+                parts = [data.get("summary") or ""]
+                if data.get("type") == "sme_updates" and data.get("summaryBar", {}).get("text"):
+                    parts.append(data["summaryBar"]["text"])
+                for card in (data.get("cards") or [])[:3]:
+                    period = card.get("period", "")
+                    bullets = card.get("bullets", [])
+                    if period and bullets:
+                        parts.append(f"{period}: {' '.join(bullets[:2])}")
+                concall_evaluation = "\n\n".join(p for p in parts if p).strip() or "Concall/company updates analyzed."
+                logger.info(
+                    "concall_evaluator: done, type=%s, cards=%d",
+                    data.get("type"),
+                    len(data.get("cards", [])),
+                )
+            else:
+                logger.warning("concall_evaluator: parsed JSON failed shape validation")
+        except json.JSONDecodeError as e:
+            logger.warning("concall_evaluator: JSON parse failed: %s", e)
 
-    logger.info("concall_evaluator: done, final HTML length=%d chars, title=%r", len(html), section_title)
-    return {"concall_evaluation": html, "concall_section_title": section_title}
+    out = {"concall_structured": concall_structured}
+    if concall_evaluation:
+        out["concall_evaluation"] = concall_evaluation
+        out["concall_section_title"] = (
+            concall_structured.get("sectionTitle") if concall_structured else "Concall Evaluation"
+        )
+    return out

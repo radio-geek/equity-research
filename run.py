@@ -30,8 +30,9 @@ def main() -> None:
     result = graph.invoke(initial_state, config=config)
 
     values = result if isinstance(result, dict) else getattr(result, "values", result)
-    if isinstance(values, dict) and values.get("report_path"):
-        print(f"\nReport saved: {values['report_path']}")
+    if isinstance(values, dict) and values.get("report_payload"):
+        meta = (values["report_payload"] or {}).get("meta", {})
+        print(f"\nReport ready for {meta.get('company_name', symbol)} ({meta.get('symbol', symbol)}).")
     else:
         print("\nSession ended.")
 
