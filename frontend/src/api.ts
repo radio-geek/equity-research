@@ -1,5 +1,55 @@
 const API_BASE = import.meta.env.VITE_API_URL ?? ''
 
+// ── Auth helpers ──────────────────────────────────────────────────────────────
+
+const TOKEN_KEY = 'er_token'
+
+export function getToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY)
+}
+
+export function setToken(token: string): void {
+  localStorage.setItem(TOKEN_KEY, token)
+}
+
+export function clearToken(): void {
+  localStorage.removeItem(TOKEN_KEY)
+}
+
+function authHeaders(): Record<string, string> {
+  const token = getToken()
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+export function loginWithGoogle(): void {
+  window.location.href = `${API_BASE}/auth/google`
+}
+
+export interface User {
+  id: number
+  email: string
+  name: string | null
+  picture: string | null
+}
+
+export async function getMe(): Promise<User | null> {
+  const token = getToken()
+  if (!token) return null
+  const res = await fetch(`${API_BASE}/auth/me`, { headers: authHeaders() })
+  if (!res.ok) {
+    if (res.status === 401) clearToken()
+    return null
+  }
+  return res.json()
+}
+
+export async function logout(): Promise<void> {
+  await fetch(`${API_BASE}/auth/logout`, {
+    method: 'POST',
+    headers: authHeaders(),
+  }).catch(() => {})
+}
+
 export interface SymbolSuggestion {
   symbol: string
   name: string
@@ -134,7 +184,7 @@ export interface FeedbackRequest {
 export async function submitFeedback(body: FeedbackRequest): Promise<{ ok: boolean }> {
   const res = await fetch(`${API_BASE}/api/feedback`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(body),
   })
   if (!res.ok) {
