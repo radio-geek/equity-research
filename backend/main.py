@@ -25,8 +25,11 @@ except ModuleNotFoundError as e:
         )
     raise
 
-from backend.job_store import create_job_store, set_pending
-from backend.reports import get_report_html, get_report_status, start_report
+from backend.cache import get_cached_report
+from backend.feedback_store import append_feedback
+from backend.job_store import create_job_store, get as job_get, set_completed_with_payload, set_pending
+from backend.pdf_render import render_payload_to_pdf
+from backend.reports import get_report_status, start_report
 from backend import symbols as symbols_module
 
 
@@ -76,13 +79,18 @@ async def api_symbols_suggest(q: str = ""):
 
 @app.post("/api/reports")
 async def api_reports_create(body: CreateReportRequest):
-    """Start a report job in background; return { report_id }."""
+    """Start a report job; if cached report exists (< 24h), complete immediately with from_cache."""
     symbol = (body.symbol or "").strip().upper()
     exchange = (body.exchange or "NSE").strip().upper()
     if not symbol:
         raise HTTPException(status_code=400, detail="symbol required")
     report_id = str(uuid.uuid4())
     store = get_store()
+    cached = get_cached_report(symbol, exchange)
+    if cached is not None:
+        set_pending(store, report_id)
+        set_completed_with_payload(store, report_id, cached, from_cache=True)
+        return {"report_id": report_id}
     set_pending(store, report_id)
     asyncio.create_task(start_report(report_id, symbol, exchange, store))
     return {"report_id": report_id}
@@ -90,7 +98,7 @@ async def api_reports_create(body: CreateReportRequest):
 
 @app.get("/api/reports/{report_id}")
 async def api_reports_status(report_id: str):
-    """Return { status, report_path?, error? }."""
+    """Return { status, report?, error? }. When completed, report is the full JSON payload."""
     store = get_store()
     info = get_report_status(store, report_id)
     if info is None:
@@ -100,10 +108,53 @@ async def api_reports_status(report_id: str):
 
 @app.get("/api/reports/{report_id}/html")
 async def api_reports_html(report_id: str):
-    """Return report HTML when status is completed."""
+    """Deprecated: reports are now returned as JSON in GET /api/reports/{id}. Returns 410 Gone."""
+    raise HTTPException(
+        status_code=410,
+        detail="HTML endpoint deprecated. Use GET /api/reports/{report_id} for JSON report when status is completed.",
+    )
+
+
+@app.get("/api/reports/{report_id}/pdf")
+async def api_reports_pdf(report_id: str):
+    """Return report as PDF attachment when status is completed."""
     store = get_store()
-    html, content_type = get_report_html(store, report_id)
-    if html is None:
+    job = job_get(store, report_id)
+    if job is None or job.get("status") != "completed":
         raise HTTPException(status_code=404, detail="Report not found or not ready")
-    from fastapi.responses import HTMLResponse
-    return HTMLResponse(content=html)
+    payload = job.get("report_payload")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=404, detail="Report payload missing")
+    try:
+        pdf_bytes = render_payload_to_pdf(payload)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail="PDF generation failed. If using WeasyPrint, install system libraries (e.g. on macOS: brew install pango cairo).",
+        ) from e
+    if not pdf_bytes:
+        raise HTTPException(status_code=500, detail="PDF generation failed")
+    meta = payload.get("meta") or {}
+    symbol = (meta.get("symbol") or "report").upper()
+    from fastapi.responses import Response
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="equity-report-{symbol}.pdf"'},
+    )
+
+
+class FeedbackRequest(BaseModel):
+    report_id: str
+    rating: str  # "up" or "down"
+    comment: str | None = None
+
+
+@app.post("/api/feedback")
+async def api_feedback(body: FeedbackRequest):
+    """Store thumbs up/down and optional comment for a report."""
+    rating = (body.rating or "").strip().lower()
+    if rating not in ("up", "down"):
+        raise HTTPException(status_code=400, detail="rating must be 'up' or 'down'")
+    append_feedback(body.report_id, rating, body.comment)
+    return {"ok": True}

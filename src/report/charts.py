@@ -9,6 +9,9 @@ from typing import Any
 # 1 Crore = 10^7 (for P&L values in INR)
 CRORE = 1e7
 
+# Metrics where a decrease is good (e.g. lower debt/equity is better)
+_LOWER_IS_BETTER = frozenset({"debt_equity"})
+
 # (data_key, label, in_crores) — ROCE removed per requirement
 _METRICS = (
     ("revenue", "Revenue (Cr)", True),
@@ -51,6 +54,7 @@ def yoy_metrics_to_chart_data(yoy_metrics: list[dict[str, Any]]) -> dict[str, An
             "values": values,
             "yoy_pct": yoy_values,
             "in_crores": in_crores,
+            "lower_is_better": key in _LOWER_IS_BETTER,
         })
     return {"periods": periods, "metrics": metrics}
 
@@ -97,12 +101,15 @@ def render_yoy_chart(chart_data: dict[str, Any]) -> bytes:
             continue
 
         ax.plot(valid_x, valid_y, color=color_line, linewidth=2.2, marker="o", markersize=7, markeredgecolor="white", markeredgewidth=1.2, label=label, zorder=3)
+        lower_is_better = m.get("lower_is_better", False)
         for i, xi in enumerate(valid_x):
             if xi < len(yoy_pct) and yoy_pct[xi] is not None:
                 y_val = valid_y[i]
-                color = color_positive if yoy_pct[xi] >= 0 else color_negative
+                pct = yoy_pct[xi]
+                good = (pct >= 0 and not lower_is_better) or (pct < 0 and lower_is_better)
+                color = color_positive if good else color_negative
                 ax.annotate(
-                    f"{yoy_pct[xi]:+.1f}%",
+                    f"{pct:+.1f}%",
                     (xi, y_val),
                     textcoords="offset points",
                     xytext=(0, 11),
@@ -180,6 +187,7 @@ def qoq_metrics_to_chart_data(qoq_metrics: list[dict[str, Any]]) -> dict[str, An
             "values": values,
             "qoq_pct": qoq_values,
             "in_crores": in_crores,
+            "lower_is_better": key in _LOWER_IS_BETTER,
         })
     return {"periods": periods, "metrics": metrics}
 
@@ -233,10 +241,13 @@ def render_qoq_chart(chart_data: dict[str, Any]) -> bytes:
             else:
                 val_str = f"{y_val:.2f}" if y_val is not None else ""
             ax.annotate(val_str, (xi, y_val), textcoords="offset points", xytext=(0, -14), ha="center", fontsize=8, color="#333")
-            # QoQ % colored
+            # QoQ % colored (invert for lower-is-better e.g. debt_equity)
             if xi < len(qoq_pct) and qoq_pct[xi] is not None:
-                color = color_positive if qoq_pct[xi] >= 0 else color_negative
-                ax.annotate(f"{qoq_pct[xi]:+.1f}%", (xi, y_val), textcoords="offset points", xytext=(0, 8), ha="center", fontsize=8, fontweight="500", color=color)
+                pct = qoq_pct[xi]
+                lower_is_better = m.get("lower_is_better", False)
+                good = (pct >= 0 and not lower_is_better) or (pct < 0 and lower_is_better)
+                color = color_positive if good else color_negative
+                ax.annotate(f"{pct:+.1f}%", (xi, y_val), textcoords="offset points", xytext=(0, 8), ha="center", fontsize=8, fontweight="500", color=color)
         ax.set_xticks(x)
         ax.set_xticklabels(periods, rotation=45, ha="right", fontsize=9)
         ax.set_ylabel(label.split(" ")[0], fontsize=10)
@@ -288,12 +299,10 @@ def qoq_metrics_to_table(qoq_metrics: list[dict[str, Any]]) -> dict[str, Any]:
                 value_display = "—"
             if pct is None:
                 trend = "neutral"
-            elif pct > 0:
-                trend = "positive"
-            elif pct < 0:
-                trend = "negative"
             else:
-                trend = "neutral"
+                # For lower-is-better (e.g. debt_equity), decrease is good
+                good = (pct > 0 and key not in _LOWER_IS_BETTER) or (pct < 0 and key in _LOWER_IS_BETTER)
+                trend = "positive" if good else "negative" if pct != 0 else "neutral"
             cells.append({"value_display": value_display, "qoq_pct": pct, "trend": trend})
         rows.append({"metric": label, "cells": cells})
     return {"headers": headers, "rows": rows}
@@ -334,12 +343,10 @@ def yearly_metrics_to_table(yearly_metrics: list[dict[str, Any]]) -> dict[str, A
                 value_display = "—"
             if pct is None:
                 trend = "neutral"
-            elif pct > 0:
-                trend = "positive"
-            elif pct < 0:
-                trend = "negative"
             else:
-                trend = "neutral"
+                # For lower-is-better (e.g. debt_equity), decrease is good
+                good = (pct > 0 and key not in _LOWER_IS_BETTER) or (pct < 0 and key in _LOWER_IS_BETTER)
+                trend = "positive" if good else "negative" if pct != 0 else "neutral"
             cells.append({"value_display": value_display, "qoq_pct": pct, "trend": trend})
         rows.append({"metric": label, "cells": cells})
     return {"headers": headers, "rows": rows}

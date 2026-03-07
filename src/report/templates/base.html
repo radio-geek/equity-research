@@ -6,6 +6,7 @@
   <!-- CSS is injected via WeasyPrint stylesheets in report_generator -->
 </head>
 <body>
+  {% if not print_only %}
   <button id="dl-btn" onclick="downloadReport()">&#11015; Download Report</button>
   <script>
     function downloadReport() {
@@ -18,6 +19,7 @@
       URL.revokeObjectURL(a.href);
     }
   </script>
+  {% endif %}
   <div class="meta">
     {{ company_name }} ({{ symbol }}) · {{ exchange }} · Generated {{ generated_at }}
   </div>

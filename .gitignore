@@ -1,6 +1,7 @@
 .venv/
 .env
 .nse_cache/
+cache_data/
 reports/*.pdf
 reports/*.html
 

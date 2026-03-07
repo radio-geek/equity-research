@@ -1,4 +1,4 @@
-"""In-memory job store: report_id -> status, report_path, error."""
+"""In-memory job store: report_id -> status, report_payload, error."""
 
 from __future__ import annotations
 
@@ -40,6 +40,18 @@ def set_completed(store: dict[str, Any], report_id: str, report_path: str) -> No
         if report_id in _jobs(store):
             _jobs(store)[report_id]["status"] = _STATUS_COMPLETED
             _jobs(store)[report_id]["report_path"] = report_path
+
+
+def set_completed_with_payload(
+    store: dict[str, Any], report_id: str, payload: dict, from_cache: bool = False
+) -> None:
+    """Mark job completed and store the report JSON payload. Optionally set from_cache=True."""
+    with _lock(store):
+        if report_id in _jobs(store):
+            _jobs(store)[report_id]["status"] = _STATUS_COMPLETED
+            _jobs(store)[report_id]["report_payload"] = payload
+            if from_cache:
+                _jobs(store)[report_id]["from_cache"] = True
 
 
 def set_failed(store: dict[str, Any], report_id: str, error: str) -> None:
