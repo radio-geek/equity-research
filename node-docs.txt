@@ -295,3 +295,125 @@ KNOWN LIMITATIONS / FUTURE IMPROVEMENTS
 - Auditor resignation details may be partial if not well covered by financial press
 - Consider adding a direct BSE filings scraper for annual report PDFs in a future version
 ================================================================================
+
+================================================================================
+NODE: company_overview
+File: src/nodes/company_overview.py
+Prompt: src/nodes/prompts.py → company_overview_prompt()
+Report: src/report/templates/base.html (section: "Company Overview")
+         backend/pdf_render.py converts markdown → HTML for PDF/HTML report
+Frontend: frontend/src/reports/ReportA.tsx — renders via react-markdown + remark-gfm
+          frontend/src/index.css — .report-markdown for tables, headings, lists, links
+================================================================================
+
+WHAT THIS NODE DOES
+--------------------
+Generates a focused, detailed company overview in Markdown. Reads company_name,
+symbol, meta, quote from ResearchState; writes company_overview (string) to state.
+Uses Tavily search for web search (invoke_llm with use_tavily_only=True when
+TAVILY_API_KEY is set); otherwise LLM without search.
+
+DATA FLOW
+----------
+Inputs from state: company_name, symbol, meta, quote
+Output to state: company_overview (Markdown string)
+
+PROMPT DESIGN (company_overview_prompt)
+----------------------------------------
+Role: Senior Equity Research Analyst specializing in the Industrials and Manufacturing sector.
+Task: Deep-dive web search and comprehensive business overview for the company.
+Reference date: Today's date is passed so "latest"/"current"/"recent" are unambiguous.
+
+Source priority: Concall PPT, company website, annual reports, BSE/NSE filings, ValuePickr forum.
+Evidence-based: inline citations for financial data and key facts; end with Sources section (URLs).
+
+Goal: Reader finishes knowing exactly how the company functions as a business unit — no fluff or generic industry descriptions.
+
+Required structure (## headings, in order):
+1. What the company does — Opening sentence: "[Company name] is a [sector] company that [how it makes money]." Then 1–2 paragraphs: day-to-day operations, target customers, market positioning.
+2. Segment Mix & Revenue — Markdown table: Segment/Business Line | Revenue Share or Role | Description. Use "Primary"/"Secondary"/"Emerging" if exact % not available. Then a paragraph on Revenue Model: who pays, main cost drivers, geographic split (Domestic vs. Export).
+3. Key Products/Services — Bulleted list of 5–8 specific, high-value offerings; technical product names from catalog; no generic filler.
+4. Timeline — Bulleted list of up to 8 major milestones in format "YYYY – Event" (listing, M&A, capacity expansions, regulatory shifts).
+5. Sources — Inline citations throughout; end with Sources subsection listing URLs (Annual Reports, Exchange Filings, Financial Portals); markdown links [text](url).
+
+Output: Strictly Markdown (no HTML). ## for headings, **bold** for emphasis. Factual and neutral.
+
+DOWNSTREAM
+----------
+- Report generator passes company_overview through to payload unchanged
+- backend/pdf_render.py: _markdown_to_html() converts to HTML (markdown lib, "tables"
+  extension) for Jinja template and PDF
+- Frontend: ReactMarkdown + remarkGfm render companyOverview; .report-markdown styles
+  tables, h2/h3, lists, links
+
+OUTPUT FORMAT
+--------------
+Markdown: headings (##), tables, lists, bold, links. No HTML.
+
+TESTED ON
+----------
+(To be filled after first run with new prompt: symbol, date, note that overview
+contains sections/tables/citations.)
+
+KNOWN LIMITATIONS / FUTURE IMPROVEMENTS
+-----------------------------------------
+- Relies on LLM web search; segment/geography data may vary by company disclosure
+- Structured JSON output variant could be added later for strict schema
+================================================================================
+
+================================================================================
+NODE: sectoral
+File: src/nodes/sectoral.py
+Prompt: src/nodes/prompts.py → sectoral_prompt()
+Report: src/report/templates/base.html (section: "Sectoral Headwinds & Tailwinds")
+        backend/pdf_render.py → sectoral_intro, sectoral_tailwinds_html, sectoral_headwinds_html
+        src/report/styles.css → .sectoral-two-col, .sectoral-tailwinds, .sectoral-headwinds
+Frontend: frontend/src/components/SectoralCard.tsx (tailwinds left / green, headwinds right / red)
+          frontend/src/reports/ReportA.tsx; bullets rendered as markdown (ReactMarkdown) with links
+================================================================================
+
+WHAT THIS NODE DOES
+--------------------
+Identifies sectoral factors that could increase or decrease revenue or margins for the company.
+Uses OpenAI Responses API with web search. Writes sectoral_analysis (narrative), sectoral_headwinds
+(list of strings), sectoral_tailwinds (list of strings) to state. Each list item may be markdown
+(bold, [Source](url)) for credibility.
+
+DATA FLOW
+----------
+Inputs from state: company_name, sector or industry
+Output to state: sectoral_analysis, sectoral_headwinds, sectoral_tailwinds
+
+PROMPT DESIGN (sectoral_prompt)
+--------------------------------
+Focus: (1) Macroeconomic factors (rates, inflation, growth, FX, commodities),
+(2) Government policies and regulations (new laws, schemes, tariffs, PLI, tax),
+(3) Industry/competitive dynamics (capacity, pricing, disruption),
+(4) Technology and demand shifts.
+Tailwinds = factors that could drive revenue growth or margin expansion.
+Headwinds = factors that could destroy revenue or compress margins.
+LLM must cite sources with URLs where possible: markdown links [Source name](url).
+Output: JSON with keys analysis (1–3 paragraphs), headwinds (2–6 bullets), tailwinds (2–6 bullets).
+Each bullet is a single string in markdown (plain text or **bold** and [link](url)); bulleted points only.
+
+REPORT LAYOUT (aligns with Green & Red flags)
+----------------------------------------------
+- Tailwinds on the LEFT (green styling); Headwinds on the RIGHT (red styling).
+- Frontend: SectoralCard grid — first column tailwinds, second column headwinds; list items
+  rendered with ReactMarkdown so links and bold work.
+- PDF/HTML template: sectoral_intro (narrative), then .sectoral-two-col with .sectoral-tailwinds
+  (left) and .sectoral-headwinds (right). Each bullet converted via _markdown_to_html for links.
+
+CSS CLASSES (report/PDF)
+-------------------------
+.sectoral-two-col     → grid 1fr 1fr
+.sectoral-col         → padding, border-radius
+.sectoral-tailwinds   → green tint border/background
+.sectoral-headwinds   → red tint border/background
+.sectoral-list        → ul for bullets; .sectoral-list a for link color
+
+KNOWN LIMITATIONS / FUTURE IMPROVEMENTS
+-----------------------------------------
+- Web search may not always return recent policy URLs; links depend on LLM citing correctly
+- Consider adding India-specific policy sources (e.g. PIB, ministry circulars) in prompt
+================================================================================

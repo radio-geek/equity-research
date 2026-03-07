@@ -74,6 +74,54 @@ tr:nth-child(even) {
   line-height: 1.55;
 }
 
+/* Sectoral: tailwinds left (green), headwinds right (red) */
+.sectoral-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25em;
+  margin-bottom: 1.5em;
+}
+.sectoral-col {
+  padding: 1em;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+.sectoral-tailwinds {
+  background: rgba(5, 150, 105, 0.08);
+  border-color: rgba(5, 150, 105, 0.35);
+}
+.sectoral-headwinds {
+  background: rgba(220, 38, 38, 0.08);
+  border-color: rgba(220, 38, 38, 0.35);
+}
+.sectoral-col-title {
+  font-size: 12pt;
+  font-weight: 600;
+  margin: 0 0 0.5em 0;
+  padding-bottom: 0.25em;
+}
+.sectoral-tailwinds .sectoral-col-title { color: #059669; }
+.sectoral-headwinds .sectoral-col-title { color: #dc2626; }
+.sectoral-list {
+  margin: 0;
+  padding-left: 1.25em;
+  font-size: 10pt;
+}
+.sectoral-list li {
+  margin-bottom: 0.4em;
+  line-height: 1.45;
+}
+.sectoral-list li p {
+  margin: 0 0 0.2em 0;
+}
+.sectoral-list a {
+  color: #0f766e;
+  text-decoration: none;
+}
+.sectoral-list a:hover {
+  text-decoration: underline;
+}
+
 /* ============================================================
    Concall Evaluation Section
    ============================================================ */
