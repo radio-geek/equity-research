@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "cd frontend && npm ci && npm run build",
-  "installCommand": "cd frontend && npm ci",
+  "buildCommand": "cd frontend && npm run build",
+  "installCommand": "cd frontend && npm install",
   "outputDirectory": "frontend/dist",
   "rewrites": [
     { "source": "/auth/:path*", "destination": "/api/vercel_auth/:path*" },
