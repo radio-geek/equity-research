@@ -39,6 +39,7 @@ from backend.auth import (
     verify_oauth_state,
 )
 from backend.cache import get_cached_report
+from backend.error_store import log_error
 from backend.feedback_store import append_feedback
 from backend.job_store import create_job_store, get as job_get, set_completed_with_payload, set_pending
 from backend.pdf_render import render_payload_to_pdf
@@ -62,12 +63,23 @@ def get_store() -> dict:
     return _job_store
 
 
+_REQUIRED_ENV = [
+    "OPENAI_API_KEY",
+    "DATABASE_URL",
+    "JWT_SECRET",
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET",
+]
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     get_store()
+    # Log any missing required env vars at startup
+    for var in _REQUIRED_ENV:
+        if not os.environ.get(var):
+            log_error("env_load", f"Required environment variable '{var}' is not set")
     yield
-    # optional: clear jobs on shutdown
-    pass
 
 
 app = FastAPI(title="Equity Research API", lifespan=lifespan)
@@ -112,15 +124,18 @@ async def auth_google_callback(
 
     # User denied permission on Google consent screen
     if error:
+        log_error("auth_signin", f"User denied Google OAuth consent: {error}")
         return RedirectResponse(url=f"{frontend_url}/?auth_error=access_denied")
 
     if not code or not state:
+        log_error("auth_signin", "OAuth callback missing code or state params")
         return RedirectResponse(url=f"{frontend_url}/?auth_error=missing_params")
 
     # CSRF check
     try:
         verify_oauth_state(request, state)
     except HTTPException:
+        log_error("auth_signin", "OAuth CSRF state mismatch")
         return RedirectResponse(url=f"{frontend_url}/?auth_error=csrf_failed")
 
     try:
@@ -130,6 +145,7 @@ async def auth_google_callback(
     except Exception as exc:
         import logging
         logging.exception("OAuth callback error: %s", exc)
+        log_error("auth_signin", f"OAuth callback server error: {exc}", exc=exc)
         return RedirectResponse(url=f"{frontend_url}/?auth_error=server_error")
 
     redirect = RedirectResponse(url=f"{frontend_url}/?token={token}")
@@ -209,17 +225,19 @@ async def api_reports_pdf(report_id: str):
     payload = job.get("report_payload")
     if not isinstance(payload, dict):
         raise HTTPException(status_code=404, detail="Report payload missing")
+    meta = payload.get("meta") or {}
+    symbol = (meta.get("symbol") or "report").upper()
     try:
         pdf_bytes = render_payload_to_pdf(payload)
     except Exception as e:
+        log_error("pdf_download", f"PDF render failed for {symbol}: {e}", exc=e, symbol=symbol)
         raise HTTPException(
             status_code=500,
             detail="PDF generation failed. If using WeasyPrint, install system libraries (e.g. on macOS: brew install pango cairo).",
         ) from e
     if not pdf_bytes:
+        log_error("pdf_download", f"PDF render returned empty bytes for {symbol}", symbol=symbol)
         raise HTTPException(status_code=500, detail="PDF generation failed")
-    meta = payload.get("meta") or {}
-    symbol = (meta.get("symbol") or "report").upper()
     from fastapi.responses import Response
     return Response(
         content=pdf_bytes,
