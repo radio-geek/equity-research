@@ -12,6 +12,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from backend.cache import get_cached_report, set_cached_report
+from backend.error_store import log_error
 from backend.job_store import (
     get as job_get,
     set_completed_with_payload as job_set_completed_with_payload,
@@ -41,9 +42,12 @@ def _run_report_sync(report_id: str, symbol: str, exchange: str, store: dict) ->
             set_cached_report(symbol, exchange, report_payload)
             job_set_completed_with_payload(store, report_id, report_payload, from_cache=False)
         else:
-            job_set_failed(store, report_id, "No report_payload in result")
+            msg = "No report_payload in result"
+            job_set_failed(store, report_id, msg)
+            log_error("report_generate", msg, symbol=symbol)
     except Exception as e:
         job_set_failed(store, report_id, str(e))
+        log_error("report_generate", str(e), exc=e, symbol=symbol)
 
 
 async def start_report(report_id: str, symbol: str, exchange: str, store: dict) -> None:
