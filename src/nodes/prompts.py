@@ -73,23 +73,31 @@ def _run_tool_calls(tools: list, tool_calls: list) -> list[ToolMessage]:
     return out
 
 
-def invoke_llm(system: str, user_content: str, use_web_search: bool = True) -> str:
-    """Call OpenAI; use built-in web search (Responses API) or Tavily when enabled. Returns assistant text."""
-    if use_web_search:
+def invoke_llm(
+    system: str,
+    user_content: str,
+    use_web_search: bool = True,
+    use_tavily_only: bool = False,
+) -> str:
+    """Call OpenAI; use built-in web search (Responses API) or Tavily when enabled. Returns assistant text.
+
+    When use_tavily_only=True, skip OpenAI web search and use Tavily search only (if TAVILY_API_KEY is set).
+    """
+    tools = _get_web_search_tools() if (use_web_search or use_tavily_only) else []
+    if use_web_search and not use_tavily_only:
         text = _invoke_openai_responses_web_search(system, user_content)
         if text is not None:
             return text
-        tools = _get_web_search_tools()
-        if tools:
-            llm = get_llm(tools=tools)
-            messages = [SystemMessage(content=system), HumanMessage(content=user_content)]
-            for _ in range(5):
-                msg = llm.invoke(messages)
-                if not getattr(msg, "tool_calls", None):
-                    return msg.content if hasattr(msg, "content") else str(msg)
-                messages.append(msg)
-                messages.extend(_run_tool_calls(tools, msg.tool_calls))
-            return getattr(messages[-1], "content", "") or ""
+    if tools:
+        llm = get_llm(tools=tools)
+        messages = [SystemMessage(content=system), HumanMessage(content=user_content)]
+        for _ in range(5):
+            msg = llm.invoke(messages)
+            if not getattr(msg, "tool_calls", None):
+                return msg.content if hasattr(msg, "content") else str(msg)
+            messages.append(msg)
+            messages.extend(_run_tool_calls(tools, msg.tool_calls))
+        return getattr(messages[-1], "content", "") or ""
     llm = get_llm(tools=None)
     msg = llm.invoke([SystemMessage(content=system), HumanMessage(content=user_content)])
     return msg.content if hasattr(msg, "content") else str(msg)
@@ -104,20 +112,47 @@ def _serialize(data: Any) -> str:
 _WEB_SEARCH_INSTRUCTION = " When useful, use the web search tool to fetch the latest news and data to enrich your answer."
 
 
+def _reference_date_context() -> str:
+    """Return a line telling the model today's date so 'latest' / 'current' are unambiguous."""
+    return (
+        f"\n\nReference date (today): {date.today().isoformat()}. "
+        "When the task or any data refers to 'latest', 'current', or 'recent', interpret it relative to this date."
+    )
+
+
 def company_overview_prompt(company_name: str, symbol: str, meta: dict, quote: dict) -> tuple[str, str]:
-    system = "You are an equity research analyst. Write a concise company overview (2–4 short paragraphs). Focus on business description, listed exchange, sector, key products/services, and recent context from the data. Be factual and neutral." + _WEB_SEARCH_INSTRUCTION
-    user = f"Company: {company_name} (symbol: {symbol}).\n\nMeta: {_serialize(meta)}\n\nQuote/trade info: {_serialize(quote)}\n\nWrite the company overview."
+    system = (
+        "Role: Act as a Senior Equity Research Analyst specializing in the Industrials and Manufacturing sector.\n\n"
+        "Task: Conduct a deep-dive web search and write a comprehensive business overview for the company provided in the user message.\n\n"
+        "Output Format: Strictly Markdown. No HTML. Use ## for section headings and **bold** text for emphasis.\n\n"
+        "Requirements:\n\n"
+        "**What the company does:** Start with one clear, plain-language sentence: \"[Company name] is a [sector] company that [how it makes money].\" "
+        "Follow with 1–2 paragraphs detailing their day-to-day operations, target customers, and market positioning.\n\n"
+        "**Segment Mix & Revenue:** Create a Markdown table with columns: Segment / Business Line, Revenue Share or Role, and Description. "
+        "If exact percentages aren't available, use \"Primary,\" \"Secondary,\" or \"Emerging\" based on recent annual reports. "
+        "Add a paragraph explaining the **Revenue Model**: Who pays them, what are the main cost drivers, and what is the geographic split (Domestic vs. Export).\n\n"
+        "**Key Products/Services:** Provide a bulleted list of 5–8 specific, high-value offerings. Avoid generic filler; use technical product names found in their catalog.\n\n"
+        "**Timeline:** Provide a bulleted list of up to 8 major milestones (Listing year, M&A, capacity expansions, or regulatory shifts) in the format \"YYYY – Event.\"\n\n"
+        "**Evidence-Based:** Use inline citations for all financial data and key facts. End with a **Sources** section listing the URLs used (Annual Reports, Exchange Filings, and Financial Portals). Use markdown links [text](url).\n\n"
+        "Goal: The reader must finish this section knowing exactly how the company functions as a business unit, without any \"fluff\" or generic industry descriptions."
+    ) + _reference_date_context() + _WEB_SEARCH_INSTRUCTION
+    user = (
+        f"Company: {company_name} (symbol: {symbol}).\n\n"
+        f"Meta: {_serialize(meta)}\n\nQuote/trade info: {_serialize(quote)}\n\n"
+        "Write the comprehensive business overview in Markdown following the required structure. "
+        "Prefer: concall PPT, company website, annual reports, BSE/NSE filings, and ValuePickr forum for evidence."
+    )
     return system, user
 
 
 def management_prompt(company_name: str, symbol: str, meta: dict, shareholding: list) -> tuple[str, str]:
-    system = "You are an equity research analyst. Summarize management and governance: quality of management, promoter/shareholding pattern, any governance or related-party concerns visible from the data. Keep it to 2–3 short paragraphs. If data is thin, say so." + _WEB_SEARCH_INSTRUCTION
+    system = "You are an equity research analyst. Summarize management and governance: quality of management, promoter/shareholding pattern, any governance or related-party concerns visible from the data. Keep it to 2–3 short paragraphs. If data is thin, say so." + _reference_date_context() + _WEB_SEARCH_INSTRUCTION
     user = f"Company: {company_name} (symbol: {symbol}).\n\nMeta: {_serialize(meta)}\n\nShareholding pattern (quarterly): {_serialize(shareholding)}\n\nWrite the management research summary."
     return system, user
 
 
 def financial_risk_prompt(company_name: str, symbol: str, ratios: list[dict], quote: dict) -> tuple[str, str]:
-    system = "You are an equity research analyst. Summarize financial risk: comment on ROE, ROCE, debt/equity, interest coverage, liquidity if present. Highlight strengths and risks in 2–3 short paragraphs." + _WEB_SEARCH_INSTRUCTION
+    system = "You are an equity research analyst. Summarize financial risk: comment on ROE, ROCE, debt/equity, interest coverage, liquidity if present. Highlight strengths and risks in 2–3 short paragraphs." + _reference_date_context() + _WEB_SEARCH_INSTRUCTION
     user = f"Company: {company_name} (symbol: {symbol}).\n\nFinancial ratios: {_serialize(ratios)}\n\nQuote/trade info: {_serialize(quote)}\n\nWrite the financial risk summary."
     return system, user
 
@@ -142,7 +177,7 @@ GOOD:
 
 BAD:
 - point one
-- point two"""
+- point two""" + _reference_date_context()
 
     user = (
         f"Company: {company_name} (symbol: {symbol}). Period: {period_label}.\n\n"
@@ -230,7 +265,7 @@ If NO qualifications found across all years:
   <div class="audit-clean">
     <p>The company has received unqualified (clean) audit opinions for all available annual reports. No emphasis of matter, CARO qualifications, or secretarial audit concerns were identified.</p>
   </div>
-</div>"""
+</div>""" + _reference_date_context()
 
     user = (
         f"Company: {company_name} (Symbol: {symbol}, Exchange: {exchange})\n\n"
@@ -377,10 +412,10 @@ HALF-YEARLY vs ANNUAL RESULTS — CRITICAL DISTINCTION:
   ★ Use H2-specific revenue/PAT from the H2-only filing, not from the annual report
 
 WHAT TO SEARCH FOR per period (in priority order):
-1. Concall/earnings call — search "{company} {period} concall", "{company} earnings call {year}"
+1. Concall/earnings call — search "<company> <period> concall", "<company> earnings call <year>"
    → use badge sme-concall-badge if found; extract management commentary
 2. Board meeting outcome letter (BSE filing after results) — use badge sme-board-badge
-3. Investor presentation / PPT — search "{company} investor presentation {period}", "{company} PPT BSE"
+3. Investor presentation / PPT — search "<company> investor presentation <period>", "<company> PPT BSE"
    → use badge sme-ppt-badge if found
 4. Half-yearly results filing (standalone H1 or H2 filing, NOT annual) — use badge sme-results-badge
 5. Management interview (news/YouTube) — use badge sme-interview-badge
@@ -445,7 +480,7 @@ UNIVERSAL RULES (apply to ALL output types)
 - The outermost tag MUST be <div class="concall-section" data-section-title="...">
 - Set data-section-title="Concall Evaluation" for MAINBOARD_WITH_CONCALLS
 - Set data-section-title="Company Updates" for SME_COMPANY or MAINBOARD_NO_CONCALLS
-- Close every opened <div> tag — HTML MUST be balanced."""
+- Close every opened <div> tag — HTML MUST be balanced.""" + _reference_date_context()
 
     quarters_list = "\n".join(f"  {i+1}. {q}" for i, q in enumerate(quarters))
     user = (
@@ -513,7 +548,7 @@ FOR SME_COMPANY or MAINBOARD_NO_CONCALLS use:
 }}
 
 Up to 6 periods for SME (H1/H2 or quarterly). H2 = Oct–Mar half only; full-year = separate card.
-Return ONLY the JSON object.""" + _WEB_SEARCH_INSTRUCTION
+Return ONLY the JSON object.""" + _reference_date_context() + _WEB_SEARCH_INSTRUCTION
 
     user = (
         f"Company: {company_name} (Symbol: {symbol}, Exchange: {exchange}).\n"
@@ -526,18 +561,28 @@ Return ONLY the JSON object.""" + _WEB_SEARCH_INSTRUCTION
 
 def sectoral_prompt(company_name: str, sector: str) -> tuple[str, str]:
     system = (
-        "You are an equity research analyst. For the given company and sector, provide a short narrative and "
-        "structured lists of sectoral headwinds and tailwinds for the near future. Consider regulation, macro, "
-        "competition, and industry trends. "
+        "You are an equity research analyst. For the given company and sector, identify factors that could "
+        "**increase or decrease revenue**, or **increase or decrease margins**, for this specific company. "
+        "Focus on: (1) **Macroeconomic factors** (rates, inflation, growth, FX, commodity prices), "
+        "(2) **Government policies and regulations** (new laws, schemes, tariffs, PLI, tax changes), "
+        "(3) **Industry and competitive dynamics** (capacity, pricing, market share, disruption), "
+        "(4) **Technology and demand shifts** relevant to the sector. "
+        "**Tailwinds** = factors that could drive revenue growth or margin expansion. "
+        "**Headwinds** = factors that could destroy revenue or compress margins. "
+        "Use web search to find recent, factual information. For each point, **cite sources with URLs** where possible "
+        "using markdown links: [Source name](url). "
         "Return ONLY a single valid JSON object with exactly these keys: "
-        '"analysis" (string, 1–3 short paragraphs), '
-        '"headwinds" (array of strings, 2–5 items), '
-        '"tailwinds" (array of strings, 2–5 items). '
-        "No markdown, no code fences, no text outside the JSON." + _WEB_SEARCH_INSTRUCTION
+        '"analysis" (string, 1–3 short paragraphs summarising the sector view for this company), '
+        '"headwinds" (array of strings, 2–6 items; each item is one bullet in Markdown: brief factor description with optional [Source](url)), '
+        '"tailwinds" (array of strings, 2–6 items; same format as headwinds). '
+        "Each headwind/tailwind string must be a single bullet: plain text or markdown with **bold** and [link](url). "
+        "No code fences, no text outside the JSON." + _reference_date_context() + _WEB_SEARCH_INSTRUCTION
     )
     user = (
         f"Company: {company_name}. Sector/industry: {sector or 'Not specified'}.\n\n"
-        "Return a JSON object with keys: analysis, headwinds, tailwinds."
+        "Return a JSON object with keys: analysis, headwinds, tailwinds. "
+        "Each headwind and tailwind must be a concise bullet (one factor per item). "
+        "Include source links in markdown format [Source](url) wherever possible to build credibility."
     )
     return system, user
 
@@ -549,7 +594,7 @@ def aggregate_prompt(
     concall_evaluation: str,
     sectoral_analysis: str,
 ) -> tuple[str, str]:
-    system = "You are an equity research analyst. Write a short executive summary (1–2 paragraphs) that ties together the company overview, management, financial risk, concall evaluation, and sectoral view. Highlight key takeaways and risks."
+    system = "You are an equity research analyst. Write a short executive summary (1–2 paragraphs) that ties together the company overview, management, financial risk, concall evaluation, and sectoral view. Highlight key takeaways and risks." + _reference_date_context()
     user = (
         f"Company overview:\n{company_overview}\n\nManagement:\n{management_research}\n\n"
         f"Financial risk:\n{financial_risk}\n\nConcall evaluation:\n{concall_evaluation}\n\n"

@@ -119,6 +119,16 @@
   <div class="section">{{ concall_evaluation | safe }}</div>
 
   <h1>Sectoral Headwinds & Tailwinds</h1>
-  <div class="section">{{ sectoral_analysis | safe }}</div>
+  <div class="section">{{ sectoral_intro | safe }}</div>
+  <div class="sectoral-two-col">
+    <div class="sectoral-col sectoral-tailwinds">
+      <h2 class="sectoral-col-title">Tailwinds</h2>
+      {{ sectoral_tailwinds_html | safe }}
+    </div>
+    <div class="sectoral-col sectoral-headwinds">
+      <h2 class="sectoral-col-title">Headwinds</h2>
+      {{ sectoral_headwinds_html | safe }}
+    </div>
+  </div>
 </body>
 </html>
