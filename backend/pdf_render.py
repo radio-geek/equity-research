@@ -12,6 +12,18 @@ log = logging.getLogger(__name__)
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
+def _markdown_to_html(text: str) -> str:
+    """Convert Markdown to HTML for report/PDF. Uses 'tables' extension. Output is escaped by the library."""
+    if not text or not text.strip():
+        return ""
+    try:
+        import markdown
+        return markdown.markdown(text, extensions=["tables"])
+    except Exception as e:
+        log.warning("Markdown conversion failed, falling back to plain text: %s", e)
+        return _text_to_html(text)
+
+
 def _text_to_html(text: str) -> str:
     if not text:
         return ""
@@ -25,6 +37,22 @@ def _text_to_html(text: str) -> str:
     text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
     text = re.sub(r"\*(.+?)\*", r"<em>\1</em>", text)
     return "<p>" + re.sub(r"\n\n+", "</p><p>", text).replace("\n", "<br>") + "</p>"
+
+
+def _sectoral_bullets_to_html(bullets: list[str]) -> str:
+    """Convert list of markdown bullet strings to HTML <ul><li>...</li></ul> with links preserved."""
+    if not bullets:
+        return ""
+    items = []
+    for raw in bullets:
+        if not raw or not raw.strip():
+            continue
+        html = _markdown_to_html(raw.strip())
+        if html.strip():
+            items.append("<li>" + html.strip() + "</li>")
+    if not items:
+        return ""
+    return "<ul class=\"sectoral-list\">" + "".join(items) + "</ul>"
 
 
 def _concall_to_html(concall: dict | None) -> str:
@@ -69,13 +97,20 @@ def payload_to_template_context(payload: dict) -> dict[str, Any]:
         concall_section_title = str(concall["sectionTitle"])
 
     sectoral_analysis = sectoral.get("analysis") or ""
-    if sectoral.get("headwinds") or sectoral.get("tailwinds"):
-        lines = [sectoral_analysis] if sectoral_analysis else []
-        if sectoral.get("headwinds"):
-            lines.append("<strong>Headwinds:</strong> " + "; ".join(sectoral["headwinds"]))
-        if sectoral.get("tailwinds"):
-            lines.append("<strong>Tailwinds:</strong> " + "; ".join(sectoral["tailwinds"]))
-        sectoral_analysis = "<p>".join(lines)
+    sectoral_tailwinds: list[str] = sectoral.get("tailwinds") or []
+    sectoral_headwinds: list[str] = sectoral.get("headwinds") or []
+    sectoral_intro_html = _markdown_to_html(sectoral_analysis) if sectoral_analysis else ""
+    sectoral_tailwinds_html = _sectoral_bullets_to_html(sectoral_tailwinds)
+    sectoral_headwinds_html = _sectoral_bullets_to_html(sectoral_headwinds)
+    # Legacy combined block for reportlab PDF path (plain text)
+    sectoral_combined = sectoral_intro_html or ""
+    if sectoral_tailwinds_html or sectoral_headwinds_html:
+        if sectoral_combined:
+            sectoral_combined += " "
+        if sectoral_tailwinds_html:
+            sectoral_combined += "<p><strong>Tailwinds:</strong></p>" + sectoral_tailwinds_html
+        if sectoral_headwinds_html:
+            sectoral_combined += "<p><strong>Headwinds:</strong></p>" + sectoral_headwinds_html
 
     generated_at = payload.get("generated_at") or ""
     if not isinstance(generated_at, str):
@@ -89,7 +124,7 @@ def payload_to_template_context(payload: dict) -> dict[str, Any]:
         "company_name": meta.get("company_name", meta.get("symbol", "")),
         "generated_at": generated_at,
         "executive_summary": _text_to_html(payload.get("executive_summary") or ""),
-        "company_overview": _text_to_html(payload.get("company_overview") or ""),
+        "company_overview": _markdown_to_html(payload.get("company_overview") or ""),
         "management_research": _text_to_html(payload.get("management_research") or ""),
         "financial_risk": _text_to_html(payload.get("financial_risk") or ""),
         "auditor_flags": payload.get("auditor_flags") if payload.get("auditor_flags") else None,
@@ -98,7 +133,10 @@ def payload_to_template_context(payload: dict) -> dict[str, Any]:
         "qoq_highlights": highlights,
         "concall_evaluation": concall_html or "<p>No concall data.</p>",
         "concall_section_title": concall_section_title,
-        "sectoral_analysis": _text_to_html(sectoral_analysis) if sectoral_analysis else "<p>—</p>",
+        "sectoral_intro": sectoral_intro_html or "<p>—</p>",
+        "sectoral_tailwinds_html": sectoral_tailwinds_html,
+        "sectoral_headwinds_html": sectoral_headwinds_html,
+        "sectoral_analysis": sectoral_combined or "<p>—</p>",
     }
 
 

@@ -16,5 +16,5 @@ def company_overview(state: ResearchState) -> dict[str, Any]:
     meta = state.get("meta") or {}
     quote = state.get("quote") or {}
     system, user = company_overview_prompt(company_name, symbol, meta, quote)
-    text = invoke_llm(system, user)
+    text = invoke_llm(system, user, use_tavily_only=True)
     return {"company_overview": text}

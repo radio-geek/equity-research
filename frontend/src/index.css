@@ -573,6 +573,81 @@ body {
   box-shadow: var(--shadow);
 }
 
+/* Report markdown (company overview etc.) */
+.report-markdown {
+  line-height: 1.6;
+}
+
+.report-markdown h2 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 1.25rem 0 0.5rem;
+  color: var(--fg);
+}
+
+.report-markdown h2:first-child {
+  margin-top: 0;
+}
+
+.report-markdown h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 1rem 0 0.4rem;
+}
+
+.report-markdown p {
+  margin: 0 0 0.75rem;
+}
+
+.report-markdown ul,
+.report-markdown ol {
+  margin: 0 0 0.75rem;
+  padding-left: 1.5rem;
+}
+
+.report-markdown li {
+  margin-bottom: 0.25rem;
+}
+
+.report-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+  font-size: 0.9rem;
+}
+
+.report-markdown th,
+.report-markdown td {
+  border: 1px solid var(--border);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+}
+
+.report-markdown th {
+  background: var(--surface);
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.report-markdown a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.report-markdown a:hover {
+  text-decoration: underline;
+}
+
+/* Sectoral bullets: inline markdown (links, bold) inside list items */
+.report-markdown.sectoral-bullet p {
+  margin: 0;
+  display: inline;
+}
+
+.report-markdown.sectoral-bullet p + p {
+  margin-top: 0.25rem;
+  display: block;
+}
 /* ── Auth / user chip ───────────────────────────────────────────────────── */
 .header-auth {
   position: absolute;
