@@ -465,9 +465,80 @@ UNIVERSAL RULES (apply to ALL output types)
     return system, user
 
 
+def concall_structured_prompt(company_name: str, symbol: str, exchange: str) -> tuple[str, str]:
+    """Prompt for structured JSON concall output (schema-aligned for report payload)."""
+    quarters = _last_8_quarters()
+    quarters_list = "\n".join(f"  {i+1}. {q}" for i, q in enumerate(quarters))
+    # Headers for guidance table: Metric + quarter labels (oldest to latest)
+    guidance_headers = ["Metric"] + [q.split(" (")[0] for q in reversed(quarters)]
+
+    system = f"""You are an expert equity research analyst for Indian listed companies. Determine if the company is MAINBOARD_WITH_CONCALLS, MAINBOARD_NO_CONCALLS, or SME_COMPANY (search: "{company_name} {symbol} SME NSE Emerge BSE SME"). Then return ONLY a single valid JSON object (no markdown, no code fences).
+
+INDIAN FY: Q1=Apr–Jun, Q2=Jul–Sep, Q3=Oct–Dec, Q4=Jan–Mar.
+
+FOR MAINBOARD_WITH_CONCALLS use this exact shape:
+{{
+  "sectionTitle": "Concall Evaluation",
+  "type": "mainboard_concall",
+  "summary": "One sentence summary.",
+  "cards": [
+    {{ "period": "Q2 FY26 (Jul–Sep 2025)", "badge": "concall" | "press-release" | "ppt" | "missing", "bullets": ["...", "..."], "guidance": "..." or null }}
+  ],
+  "capex": [
+    {{ "project": "...", "amount": "₹X Cr", "funding": "..." }}
+  ],
+  "guidanceTable": {{
+    "headers": {json.dumps(guidance_headers)},
+    "rows": [
+      {{ "metric": "Revenue growth (FY)", "cells": [ {{ "value": "15-18%", "trend": "raised" | "cut" | "maintained" | "neutral" }}, ... ] }}
+    ]
+  }},
+  "noConcallAlerts": ["Quarter X had only press release."]  // optional, only if some quarters had no concall
+}}
+
+Cover these 8 quarters (latest first): {quarters_list}
+Badge: "concall" when concall held; "press-release" when only press release; "ppt" when only presentation; "missing" when nothing found.
+Trend in guidanceTable cells: "raised", "cut", "maintained", "neutral".
+
+FOR SME_COMPANY or MAINBOARD_NO_CONCALLS use:
+{{
+  "sectionTitle": "Company Updates",
+  "type": "sme_updates",
+  "summaryBar": {{ "badge": "SME Listed", "text": "One sentence on reporting frequency and disclosure." }},
+  "cards": [
+    {{ "period": "H1 FY26 (Apr–Sep 2025)", "badge": "sme-concall" | "sme-board" | "sme-ppt" | "sme-results" | "sme-interview" | "sme-missing", "bullets": ["..."], "guidance": "..." or null }}
+  ],
+  "capex": [ {{ "project": "...", "amount": "...", "funding": "..." }} or {{ "description": "..." }} ],
+  "sources": [ {{ "period": "H1 FY26", "source": "BSE Board Meeting Outcome dated ..." }} ]
+}}
+
+Up to 6 periods for SME (H1/H2 or quarterly). H2 = Oct–Mar half only; full-year = separate card.
+Return ONLY the JSON object.""" + _WEB_SEARCH_INSTRUCTION
+
+    user = (
+        f"Company: {company_name} (Symbol: {symbol}, Exchange: {exchange}).\n"
+        "1) Determine company type (mainboard with concalls vs SME vs mainboard no concalls).\n"
+        "2) Search for concalls/filings per quarter or half-year.\n"
+        "3) Return the single JSON object matching the type. No other text."
+    )
+    return system, user
+
+
 def sectoral_prompt(company_name: str, sector: str) -> tuple[str, str]:
-    system = "You are an equity research analyst. List sectoral headwinds and tailwinds for the near future. Consider regulation, macro, competition, and industry trends. Keep it to 2–3 short paragraphs." + _WEB_SEARCH_INSTRUCTION
-    user = f"Company: {company_name}. Sector/industry: {sector or 'Not specified'}.\n\nWrite the sectoral headwinds and tailwinds."
+    system = (
+        "You are an equity research analyst. For the given company and sector, provide a short narrative and "
+        "structured lists of sectoral headwinds and tailwinds for the near future. Consider regulation, macro, "
+        "competition, and industry trends. "
+        "Return ONLY a single valid JSON object with exactly these keys: "
+        '"analysis" (string, 1–3 short paragraphs), '
+        '"headwinds" (array of strings, 2–5 items), '
+        '"tailwinds" (array of strings, 2–5 items). '
+        "No markdown, no code fences, no text outside the JSON." + _WEB_SEARCH_INSTRUCTION
+    )
+    user = (
+        f"Company: {company_name}. Sector/industry: {sector or 'Not specified'}.\n\n"
+        "Return a JSON object with keys: analysis, headwinds, tailwinds."
+    )
     return system, user
 
 

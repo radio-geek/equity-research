@@ -21,8 +21,9 @@ requests>=2.28.0
 plotly>=5.18.0
 matplotlib>=3.7.0
 
-# PDF report
+# PDF report (WeasyPrint preferred; reportlab fallback when system libs missing)
 weasyprint>=62.0
+reportlab>=4.0.0
 Jinja2>=3.1.0
 
 # Config and types

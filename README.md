@@ -78,6 +78,10 @@ npm run dev
 
 Then open **http://localhost:5173**. Use the search bar to find a stock (NSE symbol or company name); select a suggestion to go to `/:symbol/report`. The report is generated in the background and shown when ready.
 
+- **Caching**: Reports are cached under `cache_data/reports/` for 24 hours per symbol. If a report exists, it is served after a short loader without re-running the pipeline.
+- **PDF download**: On the report page, use “Download PDF” to get a styled PDF (WeasyPrint when system libs are available; otherwise ReportLab fallback). On macOS, install Pango/Cairo for WeasyPrint: `brew install pango cairo`.
+- **Feedback**: Thumbs up/down and an optional comment can be submitted; stored in `cache_data/feedback.json`.
+
 ## Data sources
 
 - **Company and market data**: Free NSE data via the `nse` package (company meta, quote, shareholding). Requests are rate-limited to avoid overloading NSE.
@@ -93,8 +97,8 @@ Then open **http://localhost:5173**. Use the search bar to find a stock (NSE sym
 - `src/report/` – Jinja2 templates and CSS for the PDF report.
 - `reports/` – Generated PDFs.
 - `run.py` – CLI entrypoint.
-- `backend/` – FastAPI app: symbol suggest (`NSE.lookup`), report job start/status/HTML.
-- `frontend/` – Vite + React + TypeScript: landing search, report page with loader.
+- `backend/` – FastAPI app: symbol suggest, report job start/status, 24h report cache, PDF export, feedback. Optional: `cache_data/` for cached reports and feedback (gitignored).
+- `frontend/` – Vite + React + TypeScript: landing (search, indices ticker, review carousel), report page with PDF download and feedback (thumbs up/down + comment).
 
 ## Contributing / Node Development
 

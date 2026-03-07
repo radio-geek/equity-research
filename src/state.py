@@ -46,8 +46,14 @@ class ResearchState(TypedDict, total=False):
     concall_section_title: NotRequired[str]  # "Concall Evaluation" or "Company Updates" (SME/no-concall)
     auditor_flags: NotRequired[str]
     sectoral_analysis: str
+    sectoral_headwinds: NotRequired[list[str]]
+    sectoral_tailwinds: NotRequired[list[str]]
     executive_summary: NotRequired[str]
+
+    # Structured concall (schema-aligned object for report payload)
+    concall_structured: NotRequired[dict]
 
     # Q&A and report
     messages: Annotated[list[dict], _message_reducer]
     report_path: NotRequired[str]
+    report_payload: NotRequired[dict]

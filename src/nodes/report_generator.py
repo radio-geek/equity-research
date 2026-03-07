@@ -1,103 +1,76 @@
-"""Report generator node: state -> Jinja2 -> WeasyPrint -> PDF."""
+"""Report generator node: state -> schema-aligned JSON payload (no PDF/HTML)."""
 
 from __future__ import annotations
 
-import re
-from datetime import datetime
-from pathlib import Path
+from datetime import datetime, timezone
 from typing import Any
 
-from src.config import get_reports_dir
-from src.report.charts import yearly_metrics_to_table
 from src.state import ResearchState
 
 
-def _as_html(text: str) -> str:
-    """Pass through if already HTML, otherwise convert plain text."""
-    if text.strip().startswith("<"):
-        return text
-    return _text_to_html(text)
-
-
-def _text_to_html(text: str) -> str:
-    """Convert plain text (with basic markdown) to HTML paragraphs."""
-    if not text:
-        return ""
-    # Strip markdown citation links [label](url) → keep label only
-    text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)
-    # Escape HTML special chars
-    text = (
-        text.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-    )
-    # Render markdown bold/italic (applied after escaping — safe)
-    text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
-    text = re.sub(r"\*(.+?)\*", r"<em>\1</em>", text)
-    return "<p>" + re.sub(r"\n\n+", "</p><p>", text).replace("\n", "<br>") + "</p>"
-
-
-def _render_html(state: ResearchState, template_dir: Path, styles_path: Path) -> str:
-    """Render state to HTML string using Jinja2 template."""
-    from jinja2 import Environment, FileSystemLoader
-
-    symbol = (state.get("symbol") or "unknown").upper()
+def _build_report_payload(state: ResearchState) -> dict[str, Any]:
+    """Build the single report JSON dict matching report-output-schema.md."""
+    symbol = (state.get("symbol") or "unknown").strip().upper()
     exchange = state.get("exchange") or "NSE"
     company_name = state.get("company_name") or symbol
-    env = Environment(loader=FileSystemLoader(str(template_dir)))
-    template = env.get_template("base.html")
-    return template.render(
-        symbol=symbol,
-        exchange=exchange,
-        company_name=company_name,
-        generated_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
-        executive_summary=_text_to_html(state.get("executive_summary") or ""),
-        company_overview=_text_to_html(state.get("company_overview") or ""),
-        management_research=_text_to_html(state.get("management_research") or ""),
-        financial_risk=_text_to_html(state.get("financial_risk") or ""),
-        auditor_flags=_as_html(state.get("auditor_flags") or ""),
-        concall_evaluation=_as_html(state.get("concall_evaluation") or ""),
-        concall_section_title=state.get("concall_section_title") or "Concall Evaluation",
-        sectoral_analysis=_text_to_html(state.get("sectoral_analysis") or ""),
-        financial_ratios=state.get("financial_ratios") or [],
-        yearly_metrics=state.get("yearly_metrics") or [],
-        yearly_table=yearly_metrics_to_table(state.get("yearly_metrics") or []),
-        qoq_highlights=state.get("qoq_highlights") or {"good": [], "bad": []},
-    )
+    sector = state.get("sector") or ""
+    industry = state.get("industry") or sector
+
+    payload: dict[str, Any] = {
+        "meta": {
+            "symbol": symbol,
+            "exchange": exchange,
+            "company_name": company_name,
+            "sector": sector,
+            "industry": industry,
+        },
+        "company": {
+            "meta": state.get("meta") or {},
+            "quote": state.get("quote") or {},
+            "shareholding": state.get("shareholding") or [],
+        },
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+
+    if state.get("executive_summary"):
+        payload["executive_summary"] = state["executive_summary"]
+    if state.get("company_overview"):
+        payload["company_overview"] = state["company_overview"]
+    if state.get("management_research"):
+        payload["management_research"] = state["management_research"]
+    if state.get("financial_risk"):
+        payload["financial_risk"] = state["financial_risk"]
+    if state.get("auditor_flags") is not None:
+        payload["auditor_flags"] = state["auditor_flags"]
+
+    concall = state.get("concall_structured")
+    payload["concall"] = concall if isinstance(concall, dict) else None
+
+    sectoral_analysis = state.get("sectoral_analysis") or ""
+    sectoral_headwinds = state.get("sectoral_headwinds")
+    sectoral_tailwinds = state.get("sectoral_tailwinds")
+    payload["sectoral"] = {
+        "analysis": sectoral_analysis,
+        "headwinds": sectoral_headwinds if isinstance(sectoral_headwinds, list) else [],
+        "tailwinds": sectoral_tailwinds if isinstance(sectoral_tailwinds, list) else [],
+    }
+
+    financial_ratios = state.get("financial_ratios")
+    yearly_metrics = state.get("yearly_metrics")
+    qoq_highlights = state.get("qoq_highlights") or {"good": [], "bad": []}
+    payload["financials"] = {
+        "ratios": financial_ratios if isinstance(financial_ratios, list) else [],
+        "yearly_metrics": yearly_metrics if isinstance(yearly_metrics, list) else [],
+        "highlights": {
+            "good": qoq_highlights.get("good", []) if isinstance(qoq_highlights, dict) else [],
+            "bad": qoq_highlights.get("bad", []) if isinstance(qoq_highlights, dict) else [],
+        },
+    }
+
+    return payload
 
 
 def report_generator(state: ResearchState) -> dict[str, Any]:
-    """Render state to PDF (or HTML if WeasyPrint unavailable) under reports/; return {report_path}."""
-    reports_dir = get_reports_dir()
-    reports_dir.mkdir(parents=True, exist_ok=True)
-    template_dir = Path(__file__).resolve().parent.parent / "report" / "templates"
-    styles_path = Path(__file__).resolve().parent.parent / "report" / "styles.css"
-    html_content = _render_html(state, template_dir, styles_path)
-
-    symbol = (state.get("symbol") or "unknown").upper()
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    try:
-        from weasyprint import HTML, CSS
-
-        out_name = f"{symbol}_{timestamp}.pdf"
-        out_path = reports_dir / out_name
-        html_doc = HTML(string=html_content, base_url=str(template_dir))
-        css = CSS(filename=str(styles_path))
-        html_doc.write_pdf(out_path, stylesheets=[css])
-        return {"report_path": str(out_path)}
-    except OSError:
-        out_name = f"{symbol}_{timestamp}.html"
-        out_path = reports_dir / out_name
-        if styles_path.exists():
-            css_content = styles_path.read_text(encoding="utf-8")
-            html_content = html_content.replace(
-                "</head>", f"<style>\n{css_content}\n</style>\n</head>"
-            )
-        out_path.write_text(html_content, encoding="utf-8")
-        print(
-            "WeasyPrint system libraries (e.g. Pango) not available; report saved as HTML. "
-            "Install them for PDF: https://doc.courtbouillon.org/weasyprint/stable/first_steps.html"
-        )
-        return {"report_path": str(out_path)}
+    """Build schema-aligned report JSON from state; return { report_payload }."""
+    payload = _build_report_payload(state)
+    return {"report_payload": payload}

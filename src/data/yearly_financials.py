@@ -123,6 +123,7 @@ def fetch_yearly_financials(
 
     rev_keys = ("Total Revenue", "TotalRevenue", "Revenue", "Operating Revenue", "OperatingRevenue")
     ebitda_keys = ("EBITDA", "Normalized EBITDA", "NormalizedEBITDA")
+    ebit_keys = ("EBIT", "Operating Income", "OperatingIncome", "Earnings Before Interest and Taxes")
     pat_keys = ("Net Income", "Net Income Common Stockholders", "NetIncome", "NetIncomeCommonStockholders")
     cfo_keys = ("Operating Cash Flow", "OperatingCashFlow", "Cash Flow From Continuing Operating Activities", "CashFromOperatingActivities")
     long_debt_keys = ("Long Term Debt", "LongTermDebt")
@@ -132,6 +133,7 @@ def fetch_yearly_financials(
     for col in y_cols:
         revenue = _value_for_column(income_y, col, *rev_keys)
         ebitda = _value_for_column(income_y, col, *ebitda_keys)
+        ebit = _value_for_column(income_y, col, *ebit_keys)
         pat = _value_for_column(income_y, col, *pat_keys)
         cfo = _value_for_column(cashflow_y, col, *cfo_keys) if cashflow_y is not None else None
         long_debt = _value_for_column(balance_y, col, *long_debt_keys) or 0.0
@@ -144,6 +146,18 @@ def fetch_yearly_financials(
             debt_equity = _safe_float(raw)
             if debt_equity is not None:
                 debt_equity = round(debt_equity, 2)
+
+        roe = None
+        if pat is not None and equity is not None and equity != 0:
+            roe = _safe_float(100 * pat / equity)
+            if roe is not None:
+                roe = round(roe, 2)
+        roce = None
+        capital = (equity or 0) + total_debt
+        if ebit is not None and capital and capital != 0:
+            roce = _safe_float(100 * ebit / capital)
+            if roce is not None:
+                roce = round(roce, 2)
 
         def _to_cr(x: float | None) -> float | None:
             if x is None:
@@ -158,11 +172,15 @@ def fetch_yearly_financials(
             "pat_cr": _to_cr(pat),
             "cfo_cr": _to_cr(cfo),
             "debt_equity": debt_equity,
+            "roe": roe,
+            "roce": roce,
             "revenue_yoy_pct": None,
             "ebitda_yoy_pct": None,
             "pat_yoy_pct": None,
             "cfo_yoy_pct": None,
             "debt_equity_yoy_pct": None,
+            "roe_yoy_pct": None,
+            "roce_yoy_pct": None,
         })
 
     # YoY %
@@ -179,6 +197,8 @@ def fetch_yearly_financials(
         r["pat_yoy_pct"] = _yoy(r.get("pat_cr"), p.get("pat_cr"))
         r["cfo_yoy_pct"] = _yoy(r.get("cfo_cr"), p.get("cfo_cr"))
         r["debt_equity_yoy_pct"] = _yoy(r.get("debt_equity"), p.get("debt_equity"))
+        r["roe_yoy_pct"] = _yoy(r.get("roe"), p.get("roe"))
+        r["roce_yoy_pct"] = _yoy(r.get("roce"), p.get("roce"))
 
     # Append TTM row
     try:
@@ -194,6 +214,7 @@ def fetch_yearly_financials(
     if ttm_col is not None and income_t is not None:
         revenue = _value_for_column(income_t, ttm_col, *rev_keys)
         ebitda = _value_for_column(income_t, ttm_col, *ebitda_keys)
+        ebit = _value_for_column(income_t, ttm_col, *ebit_keys)
         pat = _value_for_column(income_t, ttm_col, *pat_keys)
         cfo = _value_for_column(cashflow_t, ttm_col, *cfo_keys) if cashflow_t is not None else None
         long_debt = short_debt = equity = 0.0
@@ -209,6 +230,18 @@ def fetch_yearly_financials(
             if debt_equity is not None:
                 debt_equity = round(debt_equity, 2)
 
+        roe = None
+        if pat is not None and equity is not None and equity != 0:
+            roe = _safe_float(100 * pat / equity)
+            if roe is not None:
+                roe = round(roe, 2)
+        roce = None
+        capital = (equity or 0) + total_debt
+        if ebit is not None and capital and capital != 0:
+            roce = _safe_float(100 * ebit / capital)
+            if roce is not None:
+                roce = round(roce, 2)
+
         def _to_cr(x: float | None) -> float | None:
             if x is None:
                 return None
@@ -222,11 +255,15 @@ def fetch_yearly_financials(
             "pat_cr": _to_cr(pat),
             "cfo_cr": _to_cr(cfo),
             "debt_equity": debt_equity,
+            "roe": roe,
+            "roce": roce,
             "revenue_yoy_pct": None,
             "ebitda_yoy_pct": None,
             "pat_yoy_pct": None,
             "cfo_yoy_pct": None,
             "debt_equity_yoy_pct": None,
+            "roe_yoy_pct": None,
+            "roce_yoy_pct": None,
         })
 
     return results
