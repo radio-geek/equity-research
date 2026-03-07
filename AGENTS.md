@@ -55,6 +55,16 @@ This file is the **README for AI coding agents** working on the Equity Research 
 | Frontend auth | `frontend/src/contexts/AuthContext.tsx`, `frontend/src/components/Header.tsx`, `frontend/src/components/ProtectedRoute.tsx` |
 | Frontend | `frontend/src/` (Vite + React + TS) |
 | Config / env | `src/config.py`, `.env` (from `.env.example`) |
+| Vercel | `vercel.json` (build, output, rewrites), `api/index.py` (FastAPI serverless entrypoint) |
+
+---
+
+## Vercel deployment
+
+- **Frontend**: Built via `vercel.json` (`buildCommand`: `cd frontend && npm ci && npm run build`, `outputDirectory`: `frontend/dist`). SPA fallback rewrite serves `index.html` for non-API paths.
+- **API**: `api/index.py` imports `backend.main:app` and wraps it in `VercelAuthPathMiddleware` so `/auth/*` requests (rewritten to `/api/vercel_auth/*`) are routed correctly. Root `requirements.txt` is used for the Python function.
+- **CORS**: `backend/main.py` adds `VERCEL_URL` (https/http) to allowed origins when set.
+- See [README.md](README.md) § Deploying on Vercel for env vars, Google OAuth production redirect URI, and serverless limitations (timeout, in-memory job store).
 
 ---
 

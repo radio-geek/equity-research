@@ -73,7 +73,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Equity Research API", lifespan=lifespan)
 
 _frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:5173")
-_allowed_origins = list({
+_origins_set = {
     _frontend_url,
     "http://localhost:5173",
     "http://localhost:5174",
@@ -81,7 +81,12 @@ _allowed_origins = list({
     "http://localhost:3000",
     "http://127.0.0.1:5173",
     "http://127.0.0.1:3000",
-})
+}
+_vercel_url = os.environ.get("VERCEL_URL")
+if _vercel_url:
+    _origins_set.add(f"https://{_vercel_url}")
+    _origins_set.add(f"http://{_vercel_url}")
+_allowed_origins = list(_origins_set)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,
