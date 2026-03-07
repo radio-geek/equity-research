@@ -20,6 +20,11 @@ This file is the **README for AI coding agents** working on the Equity Research 
   - Install deps: `pip install -r requirements.txt`  
   - Copy env: `cp .env.example .env` and set `OPENAI_API_KEY`, `OPENAI_MODEL` (e.g. `gpt-4o`). Optional: `TAVILY_API_KEY`, `LANGSMITH_TRACING`, `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT`.
 
+- **PostgreSQL** (required for auth and caching):
+  - Create DB: `createdb equity_research` (or via psql)
+  - Run migrations: `psql -U postgres -d equity_research -f backend/migrations/001_init.sql` then `002_sessions.sql`
+  - Set `DATABASE_URL`, `JWT_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `FRONTEND_URL` in `.env`
+
 - **Backend** (from repo root, with venv active):  
   `PYTHONPATH=. python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000`  
   Use `python -m uvicorn` so the same interpreter (and `nse` package) is used.
@@ -45,6 +50,9 @@ This file is the **README for AI coding agents** working on the Equity Research 
 | NSE / financials / filings | `src/data/*.py` |
 | Report HTML/CSS | `src/report/templates/`, `src/report/styles.css`, `src/report/charts.py` |
 | Backend API | `backend/main.py`, `backend/reports.py`, `backend/symbols.py`, `backend/cache.py`, `backend/pdf_render.py`, `backend/feedback_store.py`, `backend/job_store.py` |
+| Auth & sessions | `backend/auth.py` (Google OAuth2, JWT, DB-backed sessions), `backend/db.py` (psycopg2 pool) |
+| DB migrations | `backend/migrations/001_init.sql` (users, reports, feedback), `backend/migrations/002_sessions.sql` |
+| Frontend auth | `frontend/src/contexts/AuthContext.tsx`, `frontend/src/components/Header.tsx`, `frontend/src/components/ProtectedRoute.tsx` |
 | Frontend | `frontend/src/` (Vite + React + TS) |
 | Config / env | `src/config.py`, `.env` (from `.env.example`) |
 
@@ -93,8 +101,9 @@ This file is the single source of truth for node behavior across sessions; keep 
 
 ## Environment and secrets
 
-- **Required**: `OPENAI_API_KEY`, `OPENAI_MODEL` in `.env`.  
-- **Optional**: `TAVILY_API_KEY` (fallback search), `LANGSMITH_*` (tracing), `REPORTS_DIR`, `NSE_DOWNLOAD_FOLDER`.  
+- **Required**: `OPENAI_API_KEY`, `OPENAI_MODEL` in `.env`.
+- **Required (auth/DB)**: `DATABASE_URL` (PostgreSQL DSN), `JWT_SECRET` (32-char random string), `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` (e.g. `http://localhost:8000/auth/google/callback`), `FRONTEND_URL` (e.g. `http://localhost:5173`).
+- **Optional**: `TAVILY_API_KEY` (fallback search), `LANGSMITH_*` (tracing), `REPORTS_DIR`, `NSE_DOWNLOAD_FOLDER`.
 - Never commit `.env` or real API keys. `.env.example` documents variables without values.
 
 ---
@@ -105,7 +114,8 @@ This file is the single source of truth for node behavior across sessions; keep 
 - **Financials**: `nifpy` (Yahoo Finance NSE tickers, e.g. RELIANCE.NS).  
 - **LLM + search**: Research nodes use OpenAI Responses API with built-in web search; optional Tavily fallback if configured.  
 - **Concall**: No free NSE/BSE transcripts; concall node uses web search and is documented in `node-docs.txt`.  
-- **Caching**: Backend caches reports under `cache_data/reports/` (e.g. 24h per symbol); feedback in `cache_data/feedback.json`. Both are gitignored.
+- **Caching**: Reports are cached in PostgreSQL (`reports` table, 24h TTL per symbol+exchange). Feedback stored in PostgreSQL (`feedback` table). The old `cache_data/` file-based cache is no longer used.
+- **Auth**: Google OAuth2 flow via `backend/auth.py`. Sessions stored in PostgreSQL (`sessions` table). JWT embeds `jti = session UUID`; logout revokes the DB row. Run migrations before starting the backend: `psql -U postgres -d equity_research -f backend/migrations/001_init.sql` and `002_sessions.sql`.
 
 ---
 
@@ -135,7 +145,7 @@ This file is the single source of truth for node behavior across sessions; keep 
 ## Security considerations
 
 - All secrets in environment variables only; no keys in repo.  
-- Backend CORS is set for local dev origins (e.g. localhost:5173, 127.0.0.1).  
+- Backend CORS is set for local dev origins (localhost:5173–5175, 127.0.0.1); `FRONTEND_URL` env var is included automatically.  
 - Cache and feedback paths are local and gitignored; do not expose them publicly without access control.  
 - NSE and third-party APIs: respect rate limits; do not log full responses if they contain PII.
 

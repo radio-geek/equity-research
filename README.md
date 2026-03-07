@@ -41,66 +41,103 @@ Equity research for NSE/BSE listed Indian stocks using a LangGraph-based multi-a
 
 ## PostgreSQL Setup
 
-The backend uses PostgreSQL for report caching, user accounts, and feedback.
+The backend uses PostgreSQL for report caching, user accounts, sessions, and feedback.
 
-### 1. Create the database
+### 1. Install PostgreSQL
+
+- **macOS (Homebrew)**: `brew install postgresql@16 && brew services start postgresql@16`
+- **macOS (installer)**: Download from [postgresql.org](https://www.postgresql.org/download/macosx/) — installs to `/Library/PostgreSQL/<version>/bin/`
+- **Linux**: `sudo apt install postgresql` or equivalent
+
+### 2. Create the database
 
 ```bash
-# macOS (Homebrew)
+# Homebrew / Linux
 psql -U postgres -c "CREATE DATABASE equity_research;"
 
-# macOS (PostgreSQL.app / installer)
+# macOS installer (adjust version number as needed)
 /Library/PostgreSQL/18/bin/psql -U postgres -c "CREATE DATABASE equity_research;"
 ```
 
-### 2. Run the migration
+### 3. Run both migrations
 
 ```bash
+# Users, reports, and feedback tables
 psql -U postgres -d equity_research -f backend/migrations/001_init.sql
 
-# or with full path on macOS installer
-/Library/PostgreSQL/18/bin/psql -U postgres -d equity_research -f backend/migrations/001_init.sql
+# Sessions table (required for Google Auth)
+psql -U postgres -d equity_research -f backend/migrations/002_sessions.sql
 ```
 
-This creates three tables: `users`, `reports` (cached report payloads, 24h TTL), `feedback`.
+If using the macOS installer, prefix with the full path e.g. `/Library/PostgreSQL/18/bin/psql`.
+If prompted for a password, prefix each command with `PGPASSWORD=your_password`.
 
-### 3. Set DATABASE_URL in .env
+### 4. Add DATABASE_URL to .env
 
 ```
 DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@localhost:5432/equity_research
 ```
 
-Replace `YOUR_PASSWORD` with the password you set during PostgreSQL installation.
+Replace `YOUR_PASSWORD` with the password set during PostgreSQL installation (leave blank if none).
 
 ## Google OAuth Setup
 
-Used for user login. Reports and feedback can be submitted without login; auth is optional but required to associate feedback with a user.
+Used for user login. Reports can be generated without login; auth is optional but required to associate feedback with a user account.
 
-### 1. Create OAuth credentials
+### 1. Create a Google Cloud project and OAuth client
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com) → **APIs & Services** → **Credentials**
-2. Click **Create Credentials** → **OAuth client ID**
-3. Application type: **Web application**
-4. Add Authorized redirect URI: `http://localhost:8000/auth/google/callback`
+1. Go to [Google Cloud Console](https://console.cloud.google.com)
+2. Create a new project (or select an existing one)
+3. Go to **APIs & Services** → **OAuth consent screen**
+   - User type: **External**
+   - Fill in app name, support email, developer email
+   - Scopes: add `email`, `profile`, `openid`
+   - Test users: add the Google accounts you want to use during development
+4. Go to **APIs & Services** → **Credentials** → **Create Credentials** → **OAuth client ID**
+   - Application type: **Web application**
+   - Authorized redirect URIs: add `http://localhost:8000/auth/google/callback`
 5. Copy the **Client ID** and **Client Secret**
 
-### 2. Set in .env
+### 2. Add to .env
 
 ```
 GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=your-client-secret
 GOOGLE_REDIRECT_URI=http://localhost:8000/auth/google/callback
-JWT_SECRET=<32-byte hex string from python3 -c "import secrets; print(secrets.token_hex(32))">
+FRONTEND_URL=http://localhost:5173
+JWT_SECRET=<generate with: python3 -c "import secrets; print(secrets.token_hex(32))">
+```
+
+> **Important:** `FRONTEND_URL` must match the exact URL your frontend is running on (including port). If Vite starts on `5174` or `5175` instead of `5173`, update this value.
+
+### 3. Create frontend/.env
+
+The frontend needs to know where the backend is. Create `frontend/.env` (this file is gitignored):
+
+```
+VITE_API_URL=http://localhost:8000
 ```
 
 ### Auth flow
 
-1. User clicks **Sign in with Google** on the landing page
-2. Browser goes to `GET /auth/google` → redirected to Google consent
-3. Google redirects to `GET /auth/google/callback?code=...`
-4. Backend exchanges code for user info, upserts user in `users` table, issues a JWT
-5. Frontend stores JWT in `localStorage`; subsequent requests include `Authorization: Bearer <token>`
-6. `GET /auth/me` returns the logged-in user’s profile
+1. User clicks **Sign in with Google** → browser navigates to `GET /auth/google`
+2. Backend sets a CSRF cookie and redirects to Google’s consent screen
+3. After consent, Google redirects to `GET /auth/google/callback?code=...&state=...`
+4. Backend verifies CSRF state, exchanges code for user info, upserts user in `users` table, creates a DB-backed session, and issues a JWT
+5. Browser is redirected to `FRONTEND_URL/?token=<jwt>`
+6. Frontend stores JWT in `localStorage`; all API requests include `Authorization: Bearer <token>`
+7. `GET /auth/me` returns the logged-in user’s profile
+
+### Troubleshooting
+
+| Symptom | Likely cause |
+|---|---|
+| Blank page after clicking "Sign in with Google" | `frontend/.env` missing — `VITE_API_URL` not set |
+| Redirected to `/?auth_error=csrf_failed` | CSRF state cookie not sent — try clearing browser cookies and retrying |
+| Redirected to `/?auth_error=server_error` | Check backend logs; usually a DB connection error or missing env vars |
+| Still shows "Sign in with Google" after login | `FRONTEND_URL` mismatch — frontend port doesn’t match the value in `.env` |
+| "redirect_uri_mismatch" on Google’s page | The redirect URI in Google Cloud Console doesn’t match `GOOGLE_REDIRECT_URI` in `.env` |
+| "Access blocked: app not verified" | Add your Google account as a test user in the OAuth consent screen |
 
 ### Visualizing runs with LangSmith
 
@@ -172,6 +209,7 @@ Then open **http://localhost:5173**. Use the search bar to find a stock (NSE sym
   - `backend/cache.py` – Report cache backed by `reports` table (24h TTL)
   - `backend/feedback_store.py` – Feedback stored in `feedback` table
   - `backend/migrations/001_init.sql` – Initial schema (users, reports, feedback)
+  - `backend/migrations/002_sessions.sql` – Sessions table (required for Google Auth)
 - `frontend/` – Vite + React + TypeScript: landing (search, indices ticker, review carousel), report page with PDF download and feedback (thumbs up/down + comment).
 
 ## Contributing / Node Development
