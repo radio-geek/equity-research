@@ -188,6 +188,43 @@ Then open **http://localhost:5173**. Use the search bar to find a stock (NSE sym
 - **Feedback**: Thumbs up/down and an optional comment can be submitted; stored in the `feedback` PostgreSQL table. If logged in, feedback is linked to the user.
 - **Auth**: “Sign in with Google” button on the landing page. JWT stored in `localStorage`. Requires `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `JWT_SECRET` in `.env`.
 
+## Deploying on Vercel
+
+The project is set up for [Vercel](https://vercel.com): the frontend is built from `frontend/` and the FastAPI backend runs as a serverless function via `api/index.py`. Static assets and API/auth routes are served from the same deployment.
+
+### 1. Connect your repo
+
+1. Go to [vercel.com](https://vercel.com) and import your Git repository.
+2. Use the **root** of the repo (no root directory override).
+3. Vercel will use `vercel.json`: it builds the frontend (`buildCommand`: `cd frontend && npm ci && npm run build`), sets `outputDirectory` to `frontend/dist`, and routes `/api/*` and `/auth/*` to the Python function.
+
+### 2. Environment variables
+
+In the Vercel project **Settings → Environment Variables**, add the same variables you use locally (see [Setup](#setup) and [Google OAuth Setup](#google-oauth-setup)):
+
+- `OPENAI_API_KEY`, `OPENAI_MODEL`
+- `DATABASE_URL` (use a hosted PostgreSQL, e.g. [Neon](https://neon.tech), [Supabase](https://supabase.com), or [Railway](https://railway.app))
+- `JWT_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
+- `FRONTEND_URL` = your Vercel deployment URL (e.g. `https://your-project.vercel.app`)
+
+Optional: `TAVILY_API_KEY`, `LANGSMITH_*`. `VERCEL_URL` is set automatically by Vercel; the backend adds it to CORS for preview/production.
+
+### 3. Google OAuth for production
+
+In [Google Cloud Console](https://console.cloud.google.com) → **Credentials** → your OAuth client:
+
+- Add an **Authorized redirect URI**: `https://<your-vercel-domain>/auth/google/callback`
+- Set `GOOGLE_REDIRECT_URI` in Vercel to that same URL (e.g. `https://your-project.vercel.app/auth/google/callback`).
+
+### 4. Database and migrations
+
+Run the same PostgreSQL migrations on your hosted database as in [PostgreSQL Setup](#postgresql-setup) (`001_init.sql`, `002_sessions.sql`) before deploying.
+
+### 5. Limitations on Vercel
+
+- **Function timeout**: Report generation runs inside the serverless function. Long runs may hit the plan limit (e.g. 60s on Hobby). Cached reports are returned immediately without re-running the pipeline.
+- **In-memory job store**: The backend uses an in-memory job store; on serverless, background report jobs may not complete after the HTTP response is sent. For production at scale, consider a queue (e.g. Vercel background functions or an external worker) and a persistent job store.
+
 ## Data sources
 
 - **Company and market data**: Free NSE data via the `nse` package (company meta, quote, shareholding). Requests are rate-limited to avoid overloading NSE.

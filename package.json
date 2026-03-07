@@ -1,0 +1,8 @@
+{
+  "name": "equity-research",
+  "private": true,
+  "description": "Root package for Vercel: builds frontend and serves API via api/",
+  "scripts": {
+    "build": "cd frontend && npm ci && npm run build"
+  }
+}

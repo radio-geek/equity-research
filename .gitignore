@@ -5,6 +5,9 @@ cache_data/
 reports/*.pdf
 reports/*.html
 
+# Vercel
+.vercel/
+
 # Frontend
 frontend/node_modules/
 frontend/dist/
