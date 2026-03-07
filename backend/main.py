@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -25,6 +27,17 @@ except ModuleNotFoundError as e:
         )
     raise
 
+from backend.auth import (
+    create_access_token,
+    exchange_code_for_user,
+    generate_oauth_state,
+    get_current_user,
+    get_session_id_from_request,
+    google_auth_url,
+    revoke_session,
+    upsert_user,
+    verify_oauth_state,
+)
 from backend.cache import get_cached_report
 from backend.feedback_store import append_feedback
 from backend.job_store import create_job_store, get as job_get, set_completed_with_payload, set_pending
@@ -59,13 +72,84 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Equity Research API", lifespan=lifespan)
 
+_frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+_allowed_origins = list({
+    _frontend_url,
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:5175",
+    "http://localhost:3000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
+})
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173", "http://127.0.0.1:3000"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.get("/auth/google")
+async def auth_google_login():
+    """Redirect to Google OAuth2 consent screen (sets CSRF state cookie)."""
+    redirect = RedirectResponse(url="")  # url filled below after state is known
+    state = generate_oauth_state(redirect)
+    redirect.headers["location"] = google_auth_url(state)
+    return redirect
+
+
+@app.get("/auth/google/callback")
+async def auth_google_callback(
+    request: Request,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+):
+    """Handle Google OAuth2 callback."""
+    frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+
+    # User denied permission on Google consent screen
+    if error:
+        return RedirectResponse(url=f"{frontend_url}/?auth_error=access_denied")
+
+    if not code or not state:
+        return RedirectResponse(url=f"{frontend_url}/?auth_error=missing_params")
+
+    # CSRF check
+    try:
+        verify_oauth_state(request, state)
+    except HTTPException:
+        return RedirectResponse(url=f"{frontend_url}/?auth_error=csrf_failed")
+
+    try:
+        google_info = await exchange_code_for_user(code)
+        user = upsert_user(google_info)
+        token = create_access_token(user["id"])
+    except Exception as exc:
+        import logging
+        logging.exception("OAuth callback error: %s", exc)
+        return RedirectResponse(url=f"{frontend_url}/?auth_error=server_error")
+
+    redirect = RedirectResponse(url=f"{frontend_url}/?token={token}")
+    redirect.delete_cookie("oauth_state")
+    return redirect
+
+
+@app.post("/auth/logout")
+async def auth_logout(request: Request):
+    """Revoke the current session server-side."""
+    session_id = get_session_id_from_request(request)
+    if session_id:
+        revoke_session(session_id)
+    return {"ok": True}
+
+
+@app.get("/auth/me")
+async def auth_me(current_user: dict = Depends(get_current_user)):
+    """Return the currently authenticated user's profile."""
+    return current_user
 
 
 @app.get("/api/symbols/suggest")
@@ -151,10 +235,13 @@ class FeedbackRequest(BaseModel):
 
 
 @app.post("/api/feedback")
-async def api_feedback(body: FeedbackRequest):
-    """Store thumbs up/down and optional comment for a report."""
+async def api_feedback(body: FeedbackRequest, request: Request):
+    """Store thumbs up/down and optional comment for a report. User optional."""
+    from backend.auth import get_current_user_optional
     rating = (body.rating or "").strip().lower()
     if rating not in ("up", "down"):
         raise HTTPException(status_code=400, detail="rating must be 'up' or 'down'")
-    append_feedback(body.report_id, rating, body.comment)
+    user = get_current_user_optional(request)
+    user_id = user["id"] if user else None
+    append_feedback(body.report_id, rating, body.comment, user_id=user_id)
     return {"ok": True}

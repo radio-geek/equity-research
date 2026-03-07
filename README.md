@@ -4,8 +4,10 @@ Equity research for NSE/BSE listed Indian stocks using a LangGraph-based multi-a
 
 ## Prerequisites
 
-- Python 3.10 or 3.11
+- Python 3.10+
 - pip
+- PostgreSQL 14+ (local install or hosted)
+- Node.js 18+ (for the frontend)
 
 ## Setup
 
@@ -25,14 +27,80 @@ Equity research for NSE/BSE listed Indian stocks using a LangGraph-based multi-a
    pip install -r requirements.txt
    ```
 
-4. Copy the example env file and set your OpenAI key and model:
+4. Copy the example env file and fill in your credentials:
    ```bash
    cp .env.example .env
    ```
    Edit `.env` and set:
    - `OPENAI_API_KEY` – your OpenAI API key
-   - `OPENAI_MODEL` – e.g. `gpt-4o` or `gpt-5.2` when available
-   - `TAVILY_API_KEY` – (optional) fallback for web search if OpenAI’s built-in search is unavailable; get one at [tavily.com](https://tavily.com).
+   - `OPENAI_MODEL` – e.g. `gpt-4o`
+   - `TAVILY_API_KEY` – (optional) fallback for web search; get one at [tavily.com](https://tavily.com)
+   - `DATABASE_URL` – see PostgreSQL setup below
+   - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` – see Google Auth setup below
+   - `JWT_SECRET` – generate with: `python3 -c "import secrets; print(secrets.token_hex(32))"`
+
+## PostgreSQL Setup
+
+The backend uses PostgreSQL for report caching, user accounts, and feedback.
+
+### 1. Create the database
+
+```bash
+# macOS (Homebrew)
+psql -U postgres -c "CREATE DATABASE equity_research;"
+
+# macOS (PostgreSQL.app / installer)
+/Library/PostgreSQL/18/bin/psql -U postgres -c "CREATE DATABASE equity_research;"
+```
+
+### 2. Run the migration
+
+```bash
+psql -U postgres -d equity_research -f backend/migrations/001_init.sql
+
+# or with full path on macOS installer
+/Library/PostgreSQL/18/bin/psql -U postgres -d equity_research -f backend/migrations/001_init.sql
+```
+
+This creates three tables: `users`, `reports` (cached report payloads, 24h TTL), `feedback`.
+
+### 3. Set DATABASE_URL in .env
+
+```
+DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@localhost:5432/equity_research
+```
+
+Replace `YOUR_PASSWORD` with the password you set during PostgreSQL installation.
+
+## Google OAuth Setup
+
+Used for user login. Reports and feedback can be submitted without login; auth is optional but required to associate feedback with a user.
+
+### 1. Create OAuth credentials
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com) → **APIs & Services** → **Credentials**
+2. Click **Create Credentials** → **OAuth client ID**
+3. Application type: **Web application**
+4. Add Authorized redirect URI: `http://localhost:8000/auth/google/callback`
+5. Copy the **Client ID** and **Client Secret**
+
+### 2. Set in .env
+
+```
+GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your-client-secret
+GOOGLE_REDIRECT_URI=http://localhost:8000/auth/google/callback
+JWT_SECRET=<32-byte hex string from python3 -c "import secrets; print(secrets.token_hex(32))">
+```
+
+### Auth flow
+
+1. User clicks **Sign in with Google** on the landing page
+2. Browser goes to `GET /auth/google` → redirected to Google consent
+3. Google redirects to `GET /auth/google/callback?code=...`
+4. Backend exchanges code for user info, upserts user in `users` table, issues a JWT
+5. Frontend stores JWT in `localStorage`; subsequent requests include `Authorization: Bearer <token>`
+6. `GET /auth/me` returns the logged-in user’s profile
 
 ### Visualizing runs with LangSmith
 
@@ -78,9 +146,10 @@ npm run dev
 
 Then open **http://localhost:5173**. Use the search bar to find a stock (NSE symbol or company name); select a suggestion to go to `/:symbol/report`. The report is generated in the background and shown when ready.
 
-- **Caching**: Reports are cached under `cache_data/reports/` for 24 hours per symbol. If a report exists, it is served after a short loader without re-running the pipeline.
+- **Caching**: Reports are cached in the `reports` PostgreSQL table for 24 hours per symbol. If a cached report exists, it is served immediately without re-running the pipeline.
 - **PDF download**: On the report page, use “Download PDF” to get a styled PDF (WeasyPrint when system libs are available; otherwise ReportLab fallback). On macOS, install Pango/Cairo for WeasyPrint: `brew install pango cairo`.
-- **Feedback**: Thumbs up/down and an optional comment can be submitted; stored in `cache_data/feedback.json`.
+- **Feedback**: Thumbs up/down and an optional comment can be submitted; stored in the `feedback` PostgreSQL table. If logged in, feedback is linked to the user.
+- **Auth**: “Sign in with Google” button on the landing page. JWT stored in `localStorage`. Requires `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `JWT_SECRET` in `.env`.
 
 ## Data sources
 
@@ -97,7 +166,12 @@ Then open **http://localhost:5173**. Use the search bar to find a stock (NSE sym
 - `src/report/` – Jinja2 templates and CSS for the PDF report.
 - `reports/` – Generated PDFs.
 - `run.py` – CLI entrypoint.
-- `backend/` – FastAPI app: symbol suggest, report job start/status, 24h report cache, PDF export, feedback. Optional: `cache_data/` for cached reports and feedback (gitignored).
+- `backend/` – FastAPI app: symbol suggest, report job start/status, PDF export, feedback, Google OAuth + JWT auth.
+  - `backend/db.py` – PostgreSQL connection pool and query helpers
+  - `backend/auth.py` – Google OAuth2 flow, JWT create/verify, `get_current_user` dependency
+  - `backend/cache.py` – Report cache backed by `reports` table (24h TTL)
+  - `backend/feedback_store.py` – Feedback stored in `feedback` table
+  - `backend/migrations/001_init.sql` – Initial schema (users, reports, feedback)
 - `frontend/` – Vite + React + TypeScript: landing (search, indices ticker, review carousel), report page with PDF download and feedback (thumbs up/down + comment).
 
 ## Contributing / Node Development
