@@ -1,4 +1,6 @@
 /** Report Type A: Dark dashboard — KPI strip, sections, charts and table. */
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import type { ReportView } from '../api'
 import { Section } from '../components/Section'
 import { FinancialTable } from '../components/FinancialTable'
@@ -48,7 +50,17 @@ export function ReportA({ report }: ReportAProps) {
       </div>
 
       <Section title="Company overview">
-        <p style={{ margin: 0, color: 'var(--text)', fontSize: '0.95rem' }}>{report.companyOverview}</p>
+        <div
+          className="report-markdown"
+          style={{
+            color: 'var(--text)',
+            fontSize: '0.95rem',
+          }}
+        >
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {report.companyOverview ?? ''}
+          </ReactMarkdown>
+        </div>
       </Section>
 
       <Section title="Management & governance">
