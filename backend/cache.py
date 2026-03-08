@@ -63,22 +63,22 @@ def set_cached_report(symbol: str, exchange: str, payload: dict) -> None:
 def get_cached_report_if_fresh(
     symbol: str, exchange: str, latest_transcript_stored_at: datetime | None
 ) -> dict | None:
-    """Return cached report only if within 24h TTL AND generated after latest transcript.
+    """Return cached report unless a newer transcript has been stored since it was generated.
 
-    Gap 1: enforces both time-based (expires_at) and transcript-based (generated_at) freshness.
-    Returns None if no cached report, expired, or a newer transcript exists.
+    Reports never expire on a time basis — they are only invalidated when a new concall
+    transcript is stored (quarterly cadence). The expires_at column is ignored here.
     """
     try:
         row = fetchone(
             """
             SELECT payload, generated_at FROM reports
-            WHERE symbol = %s AND exchange = %s AND expires_at > now()
+            WHERE symbol = %s AND exchange = %s
             """,
             (symbol.upper(), exchange.upper()),
         )
         if not row:
             return None
-        # If a transcript was stored after the report was generated, the report is stale
+        # Report is stale only if a transcript was stored after it was generated
         if latest_transcript_stored_at and row["generated_at"] < latest_transcript_stored_at:
             logger.info(
                 "cache: report for %s/%s is stale (generated=%s, latest_transcript=%s)",
