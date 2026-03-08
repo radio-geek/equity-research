@@ -257,6 +257,35 @@ Run the same PostgreSQL migrations on your hosted database as in [PostgreSQL Set
 - **Function timeout**: Report generation runs inside the serverless function. Long runs may hit the plan limit (e.g. 60s on Hobby). Cached reports are returned immediately without re-running the pipeline.
 - **In-memory job store**: The backend uses an in-memory job store; on serverless, background report jobs may not complete after the HTTP response is sent. For production at scale, consider a queue (e.g. Vercel background functions or an external worker) and a persistent job store.
 
+## Deploying frontend to GitHub Pages
+
+You can deploy **only the frontend** (static SPA) to [GitHub Pages](https://pages.github.com/) using the included GitHub Actions workflow. The backend does **not** run on GitHub Pages; it must be hosted elsewhere (e.g. [Render](https://render.com)).
+
+### 1. Backend
+
+Host the FastAPI backend on Render or another platform (see Render or your host’s docs for deploy steps). Set `FRONTEND_URL` on the backend to your GitHub Pages URL (e.g. `https://<user>.github.io/equity-research`).
+
+### 2. Repository secret
+
+In your GitHub repo: **Settings → Secrets and variables → Actions** → **New repository secret**:
+
+- **Name**: `RENDER_API_URL`
+- **Value**: Your backend URL (e.g. `https://equity-research-api.onrender.com`) with no trailing slash.
+
+The workflow injects this as `VITE_API_URL` at build time so the frontend calls your backend.
+
+### 3. Enable GitHub Pages
+
+In the repo: **Settings → Pages** → **Source**: choose **GitHub Actions**.
+
+### 4. Deploy
+
+Push to the `main` branch. The workflow (`.github/workflows/deploy-pages.yml`) builds the frontend with the correct base path and deploys to Pages. The site will be at `https://<user>.github.io/<repo>/` (e.g. `https://<user>.github.io/equity-research/`).
+
+### 5. CORS
+
+On the backend (e.g. Render), set `FRONTEND_URL` to your Pages origin, e.g. `https://<user>.github.io` or `https://<user>.github.io/equity-research`, so the backend allows requests from the frontend.
+
 ## Data sources
 
 - **Company and market data**: Free NSE data via the `nse` package (company meta, quote, shareholding). Requests are rate-limited to avoid overloading NSE.

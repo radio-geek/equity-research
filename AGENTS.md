@@ -56,6 +56,7 @@ This file is the **README for AI coding agents** working on the Equity Research 
 | Frontend | `frontend/src/` (Vite + React + TS) |
 | Config / env | `src/config.py`, `.env` (from `.env.example`) |
 | Vercel | `vercel.json` (build, output, rewrites), `api/index.py` (FastAPI serverless entrypoint) |
+| GitHub Pages | `.github/workflows/deploy-pages.yml` (frontend only; backend on Render or elsewhere) |
 
 ---
 
@@ -65,6 +66,13 @@ This file is the **README for AI coding agents** working on the Equity Research 
 - **API**: `api/index.py` imports `backend.main:app` and wraps it in `VercelAuthPathMiddleware` so `/auth/*` requests (rewritten to `/api/vercel_auth/*`) are routed correctly. Root `requirements.txt` is used for the Python function.
 - **CORS**: `backend/main.py` adds `VERCEL_URL` (https/http) to allowed origins when set.
 - See [README.md](README.md) § Deploying on Vercel for env vars, Google OAuth production redirect URI, and serverless limitations (timeout, in-memory job store).
+
+## GitHub Pages deployment (frontend only)
+
+- **Frontend**: Deployed via `.github/workflows/deploy-pages.yml`. On push to `main`, the workflow builds the frontend (with `VITE_BASE_PATH` and `VITE_API_URL` from secret `RENDER_API_URL`), then deploys to GitHub Pages. Base path is `/<repo>/` (e.g. `/equity-research/`). `frontend/vite.config.ts` uses `VITE_BASE_PATH`; `frontend/src/main.tsx` uses `import.meta.env.BASE_URL` for React Router basename. Build script `build:pages` copies `index.html` to `404.html` for SPA deep links.
+- **Backend**: Not deployed to Pages; must be hosted elsewhere (e.g. Render). Frontend on Pages calls the backend using the URL stored in the `RENDER_API_URL` repo secret (injected as `VITE_API_URL` at build time).
+- **CORS**: Set `FRONTEND_URL` on the backend to the GitHub Pages origin (e.g. `https://<user>.github.io/equity-research`) so the backend allows requests from the frontend.
+- See [README.md](README.md) § Deploying frontend to GitHub Pages.
 
 ---
 
