@@ -1,9 +1,10 @@
 # Deploy frontend to GitHub Pages. Backend stays on Render; set RENDER_API_URL secret.
+# Require: repo Settings → Pages → Source = "GitHub Actions" (not "Deploy from a branch").
 name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [feature/pulkit]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
