@@ -38,10 +38,9 @@ from backend.auth import (
     upsert_user,
     verify_oauth_state,
 )
-from backend.cache import get_cached_report
 from backend.error_store import log_error
 from backend.feedback_store import append_feedback
-from backend.job_store import create_job_store, get as job_get, set_completed_with_payload, set_pending
+from backend.job_store import create_job_store, get as job_get, set_pending
 from backend.pdf_render import render_payload_to_pdf
 from backend.reports import get_report_status, start_report
 from backend import symbols as symbols_module
@@ -191,11 +190,6 @@ async def api_reports_create(body: CreateReportRequest):
         raise HTTPException(status_code=400, detail="symbol required")
     report_id = str(uuid.uuid4())
     store = get_store()
-    cached = get_cached_report(symbol, exchange)
-    if cached is not None:
-        set_pending(store, report_id)
-        set_completed_with_payload(store, report_id, cached, from_cache=True)
-        return {"report_id": report_id}
     set_pending(store, report_id)
     asyncio.create_task(start_report(report_id, symbol, exchange, store))
     return {"report_id": report_id}

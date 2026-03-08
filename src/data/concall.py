@@ -1,4 +1,10 @@
-"""Concall transcript fetching from NSE corporate announcements + PDF text extraction."""
+"""Concall transcript fetching from NSE corporate announcements + PDF text extraction.
+
+Public API:
+  get_concall_transcripts()   — original: fetch live from NSE (kept as fallback)
+  refresh_transcript_cache()  — call before pipeline: update DB if needed, return True if stale
+  get_transcripts_from_db()   — call inside pipeline: read from DB cache
+"""
 
 from __future__ import annotations
 
@@ -152,3 +158,104 @@ def get_concall_transcripts(symbol: str, exchange: str = "NSE", limit: int = 8) 
         )
 
     return results
+
+
+# ---------------------------------------------------------------------------
+# DB-backed transcript cache (used by the report pipeline)
+# ---------------------------------------------------------------------------
+
+def refresh_transcript_cache(symbol: str, exchange: str = "NSE", limit: int = 8) -> bool:
+    """Ensure DB has fresh transcripts for symbol. Returns True if new/updated transcripts stored.
+
+    Steps:
+      1. Load what's in DB.
+      2. Retry PDF extraction for any row where text is NULL/empty (Gap 4).
+      3. Ask NSE for the latest transcript date only (1 fast API call, no PDF download).
+         - If NSE is unreachable: use DB as-is, return result of step 2 (Gap 2).
+      4. If DB is empty OR NSE has a newer transcript: full scrape → upsert → trim to limit.
+      5. Return True if anything changed (report must be regenerated).
+    """
+    from backend.transcript_store import (
+        get_stored_transcripts,
+        get_latest_stored_date,
+        update_transcript_text,
+        upsert_transcript,
+        trim_to_limit,
+    )
+
+    sym = symbol.strip().upper()
+    exch = exchange.strip().upper()
+    any_updated = False
+
+    # Step 1 — load DB
+    stored = get_stored_transcripts(sym, exch)
+
+    # Step 2 — retry failed PDF extractions only if there are empty-text rows (Gap 3 + Gap 4)
+    failed_rows = [r for r in stored if not r.get("text")] if stored else []
+    if failed_rows:
+        retry_session = _make_session()
+        for row in failed_rows:
+            new_text = _extract_pdf_text(row["link"], retry_session)
+            if new_text:
+                log.info("concall: retry succeeded for %s %s", sym, row["transcript_date"])
+                update_transcript_text(sym, exch, row["transcript_date"], new_text)
+                any_updated = True
+            else:
+                log.debug("concall: retry still failed for %s %s", sym, row["transcript_date"])
+
+    # Step 3 — NSE freshness check: fetch limit=8 links upfront so Step 4 can reuse them
+    # (Gap 2: avoids a second NSE API call; Gap 2: all exceptions caught → fall back to DB)
+    try:
+        all_links, segment = fetch_transcript_links(sym, limit=limit)
+    except Exception as e:
+        log.warning("concall: NSE freshness check failed for %s (%s) — using DB as-is", sym, e)
+        return any_updated
+
+    if not all_links:
+        log.warning("concall: NSE returned no transcripts for %s — using DB as-is", sym)
+        return any_updated
+
+    latest_nse_date = all_links[0]["date"]
+    latest_db_date = get_latest_stored_date(sym, exch)
+
+    if stored and latest_db_date == latest_nse_date:
+        log.info("concall: DB is up to date for %s (latest=%s)", sym, latest_db_date)
+        return any_updated
+
+    # Step 4 — DB empty or new transcript found: full scrape using already-fetched links
+    log.info(
+        "concall: DB stale for %s (db=%s, nse=%s) — full scrape",
+        sym, latest_db_date, latest_nse_date,
+    )
+    session = _make_session()
+    for entry in all_links:
+        text = _extract_pdf_text(entry["link"], session)
+        upsert_transcript(
+            sym, exch, segment,
+            entry["date"], entry["link"], entry["description"],
+            text or None,  # None = retry next time (Gap 4)
+        )
+        log.info("concall: stored %s (segment=%s, chars=%d)", entry["date"], segment, len(text or ""))
+
+    trim_to_limit(sym, exch, limit)
+    return True
+
+
+def get_transcripts_from_db(symbol: str, exchange: str = "NSE") -> list[dict[str, Any]]:
+    """Read cached transcripts from DB. Called inside the pipeline after refresh_transcript_cache().
+
+    Returns same shape as get_concall_transcripts(): [{date, link, description, text, segment}].
+    """
+    from backend.transcript_store import get_stored_transcripts
+    rows = get_stored_transcripts(symbol.strip().upper(), exchange.strip().upper())
+    # Normalise key name: DB uses 'transcript_date', pipeline expects 'date'
+    return [
+        {
+            "date": r["transcript_date"],
+            "link": r["link"],
+            "description": r.get("description") or "",
+            "text": r.get("text") or "",
+            "segment": r.get("segment") or "equities",
+        }
+        for r in rows
+    ]
