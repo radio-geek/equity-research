@@ -500,14 +500,51 @@ UNIVERSAL RULES (apply to ALL output types)
     return system, user
 
 
-def concall_structured_prompt(company_name: str, symbol: str, exchange: str) -> tuple[str, str]:
-    """Prompt for structured JSON concall output (schema-aligned for report payload)."""
+def concall_structured_prompt(
+    company_name: str,
+    symbol: str,
+    exchange: str,
+    transcripts: list[dict] | None = None,
+) -> tuple[str, str]:
+    """Prompt for structured JSON concall output (schema-aligned for report payload).
+
+    When `transcripts` is provided (list of {date, link, text, segment}), the LLM
+    analyses the actual PDF content instead of web-searching for it.
+    """
     quarters = _last_8_quarters()
     quarters_list = "\n".join(f"  {i+1}. {q}" for i, q in enumerate(quarters))
-    # Headers for guidance table: Metric + quarter labels (oldest to latest)
     guidance_headers = ["Metric"] + [q.split(" (")[0] for q in reversed(quarters)]
 
-    system = f"""You are an expert equity research analyst for Indian listed companies. Determine if the company is MAINBOARD_WITH_CONCALLS, MAINBOARD_NO_CONCALLS, or SME_COMPANY (search: "{company_name} {symbol} SME NSE Emerge BSE SME"). Then return ONLY a single valid JSON object (no markdown, no code fences).
+    has_transcripts = bool(transcripts)
+    is_sme = has_transcripts and any(t.get("segment") == "sme" for t in (transcripts or []))
+
+    if has_transcripts:
+        # Build transcript block to embed in the prompt
+        transcript_block_parts = []
+        for i, t in enumerate(transcripts, 1):
+            text = (t.get("text") or "").strip()
+            if not text:
+                text = "[PDF text could not be extracted]"
+            transcript_block_parts.append(
+                f"--- TRANSCRIPT {i} | Date: {t.get('date', '')} | Link: {t.get('link', '')} ---\n{text}"
+            )
+        transcript_block = "\n\n".join(transcript_block_parts)
+        company_type_hint = "SME_COMPANY" if is_sme else "MAINBOARD_WITH_CONCALLS"
+        data_source_note = (
+            f"You have been provided with {len(transcripts)} actual concall/earnings transcript(s) "
+            f"fetched directly from NSE filings. Company type is {company_type_hint}. "
+            "Analyse ONLY the provided transcript texts below. Do NOT use web search. "
+            "Do not invent or hallucinate any numbers, guidance, or statements not present in the transcripts."
+        )
+    else:
+        transcript_block = ""
+        data_source_note = (
+            f'Determine if the company is MAINBOARD_WITH_CONCALLS, MAINBOARD_NO_CONCALLS, or SME_COMPANY '
+            f'(search: "{company_name} {symbol} SME NSE Emerge BSE SME"). '
+            "Use web search to find concall filings for each quarter."
+        )
+
+    system = f"""You are an expert equity research analyst for Indian listed companies. {data_source_note} Return ONLY a single valid JSON object (no markdown, no code fences).
 
 INDIAN FY: Q1=Apr–Jun, Q2=Jul–Sep, Q3=Oct–Dec, Q4=Jan–Mar.
 
@@ -528,7 +565,7 @@ FOR MAINBOARD_WITH_CONCALLS use this exact shape:
       {{ "metric": "Revenue growth (FY)", "cells": [ {{ "value": "15-18%", "trend": "raised" | "cut" | "maintained" | "neutral" }}, ... ] }}
     ]
   }},
-  "noConcallAlerts": ["Quarter X had only press release."]  // optional, only if some quarters had no concall
+  "noConcallAlerts": ["Quarter X had only press release."]
 }}
 
 Cover these 8 quarters (latest first): {quarters_list}
@@ -544,18 +581,30 @@ FOR SME_COMPANY or MAINBOARD_NO_CONCALLS use:
     {{ "period": "H1 FY26 (Apr–Sep 2025)", "badge": "sme-concall" | "sme-board" | "sme-ppt" | "sme-results" | "sme-interview" | "sme-missing", "bullets": ["..."], "guidance": "..." or null }}
   ],
   "capex": [ {{ "project": "...", "amount": "...", "funding": "..." }} or {{ "description": "..." }} ],
-  "sources": [ {{ "period": "H1 FY26", "source": "BSE Board Meeting Outcome dated ..." }} ]
+  "sources": [ {{ "period": "H1 FY26", "source": "NSE filing dated ..." }} ]
 }}
 
 Up to 6 periods for SME (H1/H2 or quarterly). H2 = Oct–Mar half only; full-year = separate card.
-Return ONLY the JSON object.""" + _reference_date_context() + _WEB_SEARCH_INSTRUCTION
-
-    user = (
-        f"Company: {company_name} (Symbol: {symbol}, Exchange: {exchange}).\n"
-        "1) Determine company type (mainboard with concalls vs SME vs mainboard no concalls).\n"
-        "2) Search for concalls/filings per quarter or half-year.\n"
-        "3) Return the single JSON object matching the type. No other text."
+Return ONLY the JSON object.""" + _reference_date_context() + (
+        "" if has_transcripts else _WEB_SEARCH_INSTRUCTION
     )
+
+    if has_transcripts:
+        user = (
+            f"Company: {company_name} (Symbol: {symbol}, Exchange: {exchange}).\n\n"
+            f"Analyse the following {len(transcripts)} transcript(s) fetched from NSE and return "
+            "the JSON object. Extract key highlights, guidance, capex, and management commentary "
+            "strictly from the transcript text. Mark quarters with no transcript as badge 'missing'.\n\n"
+            f"{transcript_block}\n\n"
+            "Return the single JSON object. No other text."
+        )
+    else:
+        user = (
+            f"Company: {company_name} (Symbol: {symbol}, Exchange: {exchange}).\n"
+            "1) Determine company type (mainboard with concalls vs SME vs mainboard no concalls).\n"
+            "2) Search for concalls/filings per quarter or half-year.\n"
+            "3) Return the single JSON object matching the type. No other text."
+        )
     return system, user
 
 

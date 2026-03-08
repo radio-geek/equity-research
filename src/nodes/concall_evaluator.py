@@ -1,4 +1,4 @@
-"""Concall evaluator node: LLM-powered analysis of last 8 quarters; returns structured JSON."""
+"""Concall evaluator node: fetches actual NSE transcripts, extracts PDF text, analyses with LLM."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import re
 from typing import Any
 
 from src.state import ResearchState
+from src.data.concall import get_concall_transcripts
 
 from .prompts import concall_structured_prompt, invoke_llm
 
@@ -41,19 +42,47 @@ def _validate_concall_shape(data: dict) -> bool:
 
 
 def concall_evaluator(state: ResearchState) -> dict[str, Any]:
-    """Fetch and analyze last 8 quarters of concalls; return structured JSON for report payload."""
+    """Fetch NSE transcripts, extract PDF text, analyse with LLM (no web search)."""
     company_name = state.get("company_name") or state.get("symbol") or ""
     symbol = state.get("symbol") or ""
     exchange = state.get("exchange") or "NSE"
 
     logger.info("concall_evaluator: starting for %s (%s)", symbol, exchange)
 
-    system, user = concall_structured_prompt(company_name, symbol, exchange)
+    # Step 1: Fetch transcript links + extract PDF text from NSE
+    transcripts = []
+    use_web_search = False
+    try:
+        logger.info("concall_evaluator: fetching NSE transcript links for %s", symbol)
+        transcripts = get_concall_transcripts(symbol, exchange, limit=8)
+        if transcripts:
+            logger.info(
+                "concall_evaluator: got %d transcripts from NSE (segment=%s)",
+                len(transcripts), transcripts[0].get("segment", "?"),
+            )
+        else:
+            logger.warning(
+                "concall_evaluator: no NSE transcripts found for %s — falling back to web search", symbol
+            )
+            use_web_search = True
+    except Exception as e:
+        logger.warning("concall_evaluator: NSE fetch failed (%s) — falling back to web search", e)
+        use_web_search = True
 
-    logger.debug("concall_evaluator: invoking LLM with web search")
-    raw = invoke_llm(system, user, use_web_search=True)
+    # Step 2: Build prompt — with real transcripts (no web search) or web search fallback
+    system, user = concall_structured_prompt(
+        company_name, symbol, exchange,
+        transcripts=transcripts if not use_web_search else None,
+    )
+
+    logger.info(
+        "concall_evaluator: invoking LLM (use_web_search=%s, transcripts=%d)",
+        use_web_search, len(transcripts),
+    )
+    raw = invoke_llm(system, user, use_web_search=use_web_search)
     logger.debug("concall_evaluator: raw LLM output length=%d chars", len(raw or ""))
 
+    # Step 3: Parse and validate JSON output
     concall_structured = None
     concall_evaluation = ""
     if raw:
@@ -62,7 +91,6 @@ def concall_evaluator(state: ResearchState) -> dict[str, Any]:
             data = json.loads(stripped)
             if _validate_concall_shape(data):
                 concall_structured = data
-                # Brief text for aggregate node (executive summary)
                 parts = [data.get("summary") or ""]
                 if data.get("type") == "sme_updates" and data.get("summaryBar", {}).get("text"):
                     parts.append(data["summaryBar"]["text"])
@@ -73,16 +101,26 @@ def concall_evaluator(state: ResearchState) -> dict[str, Any]:
                         parts.append(f"{period}: {' '.join(bullets[:2])}")
                 concall_evaluation = "\n\n".join(p for p in parts if p).strip() or "Concall/company updates analyzed."
                 logger.info(
-                    "concall_evaluator: done, type=%s, cards=%d",
+                    "concall_evaluator: done, type=%s, cards=%d, source=%s",
                     data.get("type"),
                     len(data.get("cards", [])),
+                    "nse_transcripts" if not use_web_search else "web_search",
                 )
             else:
                 logger.warning("concall_evaluator: parsed JSON failed shape validation")
         except json.JSONDecodeError as e:
             logger.warning("concall_evaluator: JSON parse failed: %s", e)
 
-    out = {"concall_structured": concall_structured}
+    # Build transcript links list for state (date + link, no raw text to keep state lean)
+    transcript_links = [
+        {"date": t["date"], "link": t["link"], "description": t["description"]}
+        for t in transcripts
+    ]
+
+    out: dict[str, Any] = {
+        "concall_structured": concall_structured,
+        "concall_transcript_links": transcript_links,
+    }
     if concall_evaluation:
         out["concall_evaluation"] = concall_evaluation
         out["concall_section_title"] = (
