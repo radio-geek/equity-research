@@ -53,6 +53,9 @@ class ResearchState(TypedDict, total=False):
     # Structured concall (schema-aligned object for report payload)
     concall_structured: NotRequired[dict]
 
+    # Links to the actual NSE transcript PDFs used for concall analysis
+    concall_transcript_links: NotRequired[list[dict]]  # [{date, link, description}]
+
     # Q&A and report
     messages: Annotated[list[dict], _message_reducer]
     report_path: NotRequired[str]
