@@ -59,7 +59,7 @@ psql -U postgres -c "CREATE DATABASE equity_research;"
 /Library/PostgreSQL/18/bin/psql -U postgres -c "CREATE DATABASE equity_research;"
 ```
 
-### 3. Run both migrations
+### 3. Run all migrations
 
 ```bash
 # Users, reports, and feedback tables
@@ -67,18 +67,50 @@ psql -U postgres -d equity_research -f backend/migrations/001_init.sql
 
 # Sessions table (required for Google Auth)
 psql -U postgres -d equity_research -f backend/migrations/002_sessions.sql
+
+# Error logs table
+psql -U postgres -d equity_research -f backend/migrations/003_error_logs.sql
 ```
 
 If using the macOS installer, prefix with the full path e.g. `/Library/PostgreSQL/18/bin/psql`.
 If prompted for a password, prefix each command with `PGPASSWORD=your_password`.
 
-### 4. Add DATABASE_URL to .env
+### 4. Create a least-privilege app user (required)
+
+The backend connects as a dedicated `equity_app` user instead of the `postgres` superuser. This limits blast radius if the app is ever compromised — `equity_app` can only read/write data rows, not drop tables or access other databases.
+
+Run this once as the `postgres` superuser:
+
+```bash
+psql -U postgres -d equity_research
+```
+
+Then paste:
+
+```sql
+CREATE USER equity_app WITH PASSWORD 'choose-a-strong-password';
+GRANT CONNECT ON DATABASE equity_research TO equity_app;
+GRANT USAGE ON SCHEMA public TO equity_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO equity_app;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO equity_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO equity_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT USAGE, SELECT ON SEQUENCES TO equity_app;
+```
+
+Replace `choose-a-strong-password` with a strong random string — you can generate one with:
+```bash
+python3 -c "import secrets; print(secrets.token_urlsafe(24))"
+```
+
+### 5. Add DATABASE_URL to .env
 
 ```
-DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@localhost:5432/equity_research
+DATABASE_URL=postgresql://equity_app:your-chosen-password@localhost:5432/equity_research
 ```
 
-Replace `YOUR_PASSWORD` with the password set during PostgreSQL installation (leave blank if none).
+Use the `equity_app` user and the password you set above — **not** the `postgres` superuser.
 
 ## Google OAuth Setup
 
