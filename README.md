@@ -70,10 +70,19 @@ psql -U postgres -d equity_research -f backend/migrations/002_sessions.sql
 
 # Error logs table
 psql -U postgres -d equity_research -f backend/migrations/003_error_logs.sql
+
+# Concall transcript cache table
+psql -U postgres -d equity_research -f backend/migrations/004_concall_transcripts.sql
 ```
 
 If using the macOS installer, prefix with the full path e.g. `/Library/PostgreSQL/18/bin/psql`.
 If prompted for a password, prefix each command with `PGPASSWORD=your_password`.
+
+> **Note for `equity_app` users:** `ALTER DEFAULT PRIVILEGES` only covers tables created *after* the command is run. For each new migration table you must also grant access manually. After running migration 004, run this as `postgres`:
+> ```sql
+> GRANT SELECT, INSERT, UPDATE, DELETE ON concall_transcripts TO equity_app;
+> GRANT USAGE, SELECT ON SEQUENCE concall_transcripts_id_seq TO equity_app;
+> ```
 
 ### 4. Create a least-privilege app user (required)
 

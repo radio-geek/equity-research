@@ -1,4 +1,9 @@
-"""Report cache: store/load report JSON per symbol+exchange in PostgreSQL (24h TTL)."""
+"""Report cache: store/load report JSON per symbol+exchange in PostgreSQL (24h TTL).
+
+get_cached_report()          — simple 24h TTL check (kept for compatibility)
+get_cached_report_if_fresh() — checks 24h TTL AND transcript freshness (used by pipeline)
+set_cached_report()          — upsert with 24h TTL
+"""
 
 from __future__ import annotations
 
@@ -53,3 +58,34 @@ def set_cached_report(symbol: str, exchange: str, payload: dict) -> None:
         )
     except Exception as e:
         logger.warning("cache write failed for %s/%s: %s", symbol, exchange, e)
+
+
+def get_cached_report_if_fresh(
+    symbol: str, exchange: str, latest_transcript_stored_at: datetime | None
+) -> dict | None:
+    """Return cached report only if within 24h TTL AND generated after latest transcript.
+
+    Gap 1: enforces both time-based (expires_at) and transcript-based (generated_at) freshness.
+    Returns None if no cached report, expired, or a newer transcript exists.
+    """
+    try:
+        row = fetchone(
+            """
+            SELECT payload, generated_at FROM reports
+            WHERE symbol = %s AND exchange = %s AND expires_at > now()
+            """,
+            (symbol.upper(), exchange.upper()),
+        )
+        if not row:
+            return None
+        # If a transcript was stored after the report was generated, the report is stale
+        if latest_transcript_stored_at and row["generated_at"] < latest_transcript_stored_at:
+            logger.info(
+                "cache: report for %s/%s is stale (generated=%s, latest_transcript=%s)",
+                symbol, exchange, row["generated_at"], latest_transcript_stored_at,
+            )
+            return None
+        return row["payload"]
+    except Exception as e:
+        logger.warning("cache freshness lookup failed for %s/%s: %s", symbol, exchange, e)
+        return None

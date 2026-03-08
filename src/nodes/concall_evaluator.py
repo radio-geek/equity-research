@@ -1,4 +1,8 @@
-"""Concall evaluator node: fetches actual NSE transcripts, extracts PDF text, analyses with LLM."""
+"""Concall evaluator node: reads cached NSE transcripts from DB, analyses with LLM.
+
+Transcripts are pre-loaded into DB by refresh_transcript_cache() before the pipeline runs.
+Falls back to web search if DB has no transcripts for this symbol.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +12,7 @@ import re
 from typing import Any
 
 from src.state import ResearchState
-from src.data.concall import get_concall_transcripts
+from src.data.concall import get_transcripts_from_db
 
 from .prompts import concall_structured_prompt, invoke_llm
 
@@ -49,24 +53,23 @@ def concall_evaluator(state: ResearchState) -> dict[str, Any]:
 
     logger.info("concall_evaluator: starting for %s (%s)", symbol, exchange)
 
-    # Step 1: Fetch transcript links + extract PDF text from NSE
+    # Step 1: Load transcripts from DB cache (populated by refresh_transcript_cache before pipeline)
     transcripts = []
     use_web_search = False
     try:
-        logger.info("concall_evaluator: fetching NSE transcript links for %s", symbol)
-        transcripts = get_concall_transcripts(symbol, exchange, limit=8)
+        transcripts = get_transcripts_from_db(symbol, exchange)
         if transcripts:
             logger.info(
-                "concall_evaluator: got %d transcripts from NSE (segment=%s)",
+                "concall_evaluator: got %d transcripts from DB (segment=%s)",
                 len(transcripts), transcripts[0].get("segment", "?"),
             )
         else:
             logger.warning(
-                "concall_evaluator: no NSE transcripts found for %s — falling back to web search", symbol
+                "concall_evaluator: no DB transcripts for %s — falling back to web search", symbol
             )
             use_web_search = True
     except Exception as e:
-        logger.warning("concall_evaluator: NSE fetch failed (%s) — falling back to web search", e)
+        logger.warning("concall_evaluator: DB read failed (%s) — falling back to web search", e)
         use_web_search = True
 
     # Step 2: Build prompt — with real transcripts (no web search) or web search fallback

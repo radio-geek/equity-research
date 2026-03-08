@@ -11,7 +11,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from backend.cache import get_cached_report, set_cached_report
+from backend.cache import get_cached_report_if_fresh, set_cached_report
 from backend.error_store import log_error
 from backend.job_store import (
     get as job_get,
@@ -25,6 +25,27 @@ def _run_report_sync(report_id: str, symbol: str, exchange: str, store: dict) ->
     """Run graph once; update store with report_payload or error; write cache on success."""
     job_set_running(store, report_id)
     try:
+        # Step 0a: Refresh transcript cache (fast when DB is up to date — 1 NSE API call)
+        # Wrapped in its own try/except so a cache failure never kills the full report job.
+        from src.data.concall import refresh_transcript_cache
+        from backend.transcript_store import get_latest_stored_at
+        import logging as _logging
+        _log = _logging.getLogger(__name__)
+
+        try:
+            transcripts_updated = refresh_transcript_cache(symbol, exchange)
+        except Exception as _e:
+            _log.warning("transcript cache refresh failed for %s (%s) — continuing without cache", symbol, _e)
+            transcripts_updated = False
+
+        # Step 0b: Return cached report if transcripts haven't changed
+        if not transcripts_updated:
+            latest_at = get_latest_stored_at(symbol, exchange)
+            cached = get_cached_report_if_fresh(symbol, exchange, latest_at)
+            if cached:
+                job_set_completed_with_payload(store, report_id, cached, from_cache=True)
+                return
+
         from src.graph import build_graph
 
         graph = build_graph()
