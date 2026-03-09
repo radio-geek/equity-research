@@ -32,6 +32,7 @@ from backend.auth import (
     exchange_code_for_user,
     generate_oauth_state,
     get_current_user,
+    get_current_user_optional,
     get_session_id_from_request,
     google_auth_url,
     revoke_session,
@@ -97,6 +98,12 @@ _vercel_url = os.environ.get("VERCEL_URL")
 if _vercel_url:
     _origins_set.add(f"https://{_vercel_url}")
     _origins_set.add(f"http://{_vercel_url}")
+# Optional: comma-separated list of extra origins (e.g. GitHub Pages: https://user.github.io)
+_extra = os.environ.get("ADDITIONAL_CORS_ORIGINS", "")
+for origin in _extra.split(","):
+    origin = origin.strip()
+    if origin:
+        _origins_set.add(origin)
 _allowed_origins = list(_origins_set)
 app.add_middleware(
     CORSMiddleware,
@@ -197,7 +204,8 @@ async def api_reports_create(body: CreateReportRequest):
 
 @app.get("/api/reports/{report_id}")
 async def api_reports_status(report_id: str):
-    """Return { status, report?, error? }. When completed, report is the full JSON payload."""
+    """Return { status, report?, error? }. When completed, report is the full JSON payload.
+    Premium sections (concall, sectoral) are gated by blur/sign-in on the frontend."""
     store = get_store()
     info = get_report_status(store, report_id)
     if info is None:
@@ -215,8 +223,8 @@ async def api_reports_html(report_id: str):
 
 
 @app.get("/api/reports/{report_id}/pdf")
-async def api_reports_pdf(report_id: str):
-    """Return report as PDF attachment when status is completed."""
+async def api_reports_pdf(report_id: str, current_user: dict = Depends(get_current_user)):
+    """Return report as PDF attachment when status is completed. Requires authentication."""
     store = get_store()
     job = job_get(store, report_id)
     if job is None or job.get("status") != "completed":

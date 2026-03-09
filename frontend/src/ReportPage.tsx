@@ -8,6 +8,7 @@ import {
   mapReportPayloadToView,
   type ReportView,
 } from './api'
+import { useAuth } from './contexts/AuthContext'
 import { ReportA } from './reports/ReportA'
 
 const POLL_INTERVAL_MS = 2500
@@ -16,12 +17,14 @@ const CACHE_LOADER_MS = 3000
 export default function ReportPage() {
   const { symbol } = useParams<{ symbol: string }>()
   const navigate = useNavigate()
+  const { isAuthenticated, signIn } = useAuth()
   const [reportId, setReportId] = useState<string | null>(null)
   const [status, setStatus] = useState<'idle' | 'pending' | 'running' | 'completed' | 'failed'>('idle')
   const [error, setError] = useState<string | null>(null)
   const [reportView, setReportView] = useState<ReportView | null>(null)
   const [showCacheLoader, setShowCacheLoader] = useState(false)
   const [pdfLoading, setPdfLoading] = useState(false)
+  const [showDownloadLoginModal, setShowDownloadLoginModal] = useState(false)
   const [feedbackSent, setFeedbackSent] = useState<'up' | 'down' | null>(null)
   const [feedbackComment, setFeedbackComment] = useState('')
   const [showFeedbackComment, setShowFeedbackComment] = useState(false)
@@ -95,6 +98,10 @@ export default function ReportPage() {
 
   const handleDownloadPdf = async () => {
     if (!reportId) return
+    if (!isAuthenticated) {
+      setShowDownloadLoginModal(true)
+      return
+    }
     setPdfLoading(true)
     try {
       const blob = await getReportPdfBlob(reportId)
@@ -105,7 +112,7 @@ export default function ReportPage() {
       a.click()
       URL.revokeObjectURL(url)
     } catch {
-      // ignore
+      setShowDownloadLoginModal(true)
     } finally {
       setPdfLoading(false)
     }
@@ -232,6 +239,43 @@ export default function ReportPage() {
       {showReport && (
         <div className="report-container">
           <ReportA report={reportView!} />
+        </div>
+      )}
+
+      {showDownloadLoginModal && (
+        <div
+          className="report-login-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="download-login-modal-title"
+          onClick={() => setShowDownloadLoginModal(false)}
+        >
+          <div
+            className="report-login-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="download-login-modal-title">Sign in to download the report</h2>
+            <p>You need to be signed in to download the PDF.</p>
+            <div className="report-login-modal-actions">
+              <button
+                type="button"
+                className="report-download-btn"
+                onClick={() => {
+                  setShowDownloadLoginModal(false)
+                  signIn()
+                }}
+              >
+                Sign in
+              </button>
+              <button
+                type="button"
+                className="feedback-cancel"
+                onClick={() => setShowDownloadLoginModal(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
