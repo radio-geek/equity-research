@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
 from src.state import ResearchState
+
+logger = logging.getLogger(__name__)
 
 
 def _build_report_payload(state: ResearchState) -> dict[str, Any]:
@@ -16,6 +19,7 @@ def _build_report_payload(state: ResearchState) -> dict[str, Any]:
     sector = state.get("sector") or ""
     industry = state.get("industry") or sector
 
+    screener_quote = state.get("screener_quote") or {}
     payload: dict[str, Any] = {
         "meta": {
             "symbol": symbol,
@@ -28,6 +32,7 @@ def _build_report_payload(state: ResearchState) -> dict[str, Any]:
             "meta": state.get("meta") or {},
             "quote": state.get("quote") or {},
             "shareholding": state.get("shareholding") or [],
+            "screener_quote": screener_quote,
         },
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
@@ -65,6 +70,9 @@ def _build_report_payload(state: ResearchState) -> dict[str, Any]:
             "good": qoq_highlights.get("good", []) if isinstance(qoq_highlights, dict) else [],
             "bad": qoq_highlights.get("bad", []) if isinstance(qoq_highlights, dict) else [],
         },
+        "financial_scorecard": state.get("financial_scorecard"),
+        "five_year_trend": state.get("five_year_trend") or {"headers": [], "rows": []},
+        "trend_insight_summary": state.get("trend_insight_summary") or "",
     }
 
     return payload
@@ -72,5 +80,12 @@ def _build_report_payload(state: ResearchState) -> dict[str, Any]:
 
 def report_generator(state: ResearchState) -> dict[str, Any]:
     """Build schema-aligned report JSON from state; return { report_payload }."""
-    payload = _build_report_payload(state)
-    return {"report_payload": payload}
+    symbol = state.get("symbol") or ""
+    logger.info("report_generator: building payload for %s", symbol)
+    try:
+        payload = _build_report_payload(state)
+        logger.info("report_generator: done for %s, payload keys: %s", symbol, list(payload.keys()))
+        return {"report_payload": payload}
+    except Exception as e:
+        logger.exception("report_generator failed for %s: %s", symbol, e)
+        raise

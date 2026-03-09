@@ -188,6 +188,20 @@ BAD:
     return system, user
 
 
+def trend_insight_prompt(company_name: str, symbol: str, five_year_table_text: str) -> tuple[str, str]:
+    """Prompt for 2-3 line interpretation of 5-year financial trend."""
+    system = (
+        "You are an equity research analyst. Given a 5-year financial trend table (Revenue, PAT, margins, ROE, debt, cash flow), "
+        "write a short interpretation in 2–3 sentences. Cover: revenue and profit trend, margin trajectory, debt trend, and cash flow. "
+        "Be factual and concise. No bullet points; plain prose only."
+    ) + _reference_date_context()
+    user = (
+        f"Company: {company_name} (symbol: {symbol}).\n\n5-Year Financial Trend:\n{five_year_table_text}\n\n"
+        "Write 2–3 sentences summarising the trend."
+    )
+    return system, user
+
+
 def auditor_flags_prompt(company_name: str, symbol: str, exchange: str) -> tuple[str, str]:
     system = """You are an expert equity research analyst and forensic accountant specializing in audit quality assessment for Indian listed companies.
 

@@ -82,13 +82,10 @@ def payload_to_template_context(payload: dict) -> dict[str, Any]:
     financials = payload.get("financials") or {}
     yearly_metrics = financials.get("yearly_metrics") or []
     highlights = financials.get("highlights") or {}
+    financial_scorecard = financials.get("financial_scorecard")
+    five_year_trend = financials.get("five_year_trend") or {"headers": [], "rows": []}
+    trend_insight_summary = financials.get("trend_insight_summary") or ""
     sectoral = payload.get("sectoral") or {}
-
-    # Build yearly_table using same helper as report
-    yearly_table = {"headers": [], "rows": []}
-    if yearly_metrics:
-        from src.report.charts import yearly_metrics_to_table
-        yearly_table = yearly_metrics_to_table(yearly_metrics)
 
     concall = payload.get("concall")
     concall_html = _concall_to_html(concall)
@@ -117,19 +114,34 @@ def payload_to_template_context(payload: dict) -> dict[str, Any]:
         generated_at = str(generated_at)
     generated_at = generated_at.replace("T", " ").replace("Z", "")[:16]
 
+    from src.report.financial_evaluation import build_key_metrics
+    key_metrics = build_key_metrics(yearly_metrics)
+    company = payload.get("company") or {}
+    screener_quote = company.get("screener_quote") or {}
+    if screener_quote.get("current_price") is not None:
+        key_metrics["current_price"] = str(screener_quote["current_price"])
+    if screener_quote.get("market_cap"):
+        key_metrics["market_cap"] = str(screener_quote["market_cap"])
+    if screener_quote.get("last_price_updated"):
+        key_metrics["last_price_updated"] = str(screener_quote["last_price_updated"])
+
     return {
         "print_only": True,
         "symbol": meta.get("symbol", ""),
         "exchange": meta.get("exchange", "NSE"),
         "company_name": meta.get("company_name", meta.get("symbol", "")),
         "generated_at": generated_at,
+        "key_metrics": key_metrics,
+        "screener_quote": screener_quote,
         "executive_summary": _text_to_html(payload.get("executive_summary") or ""),
         "company_overview": _markdown_to_html(payload.get("company_overview") or ""),
         "management_research": _text_to_html(payload.get("management_research") or ""),
         "financial_risk": _text_to_html(payload.get("financial_risk") or ""),
         "auditor_flags": payload.get("auditor_flags") if payload.get("auditor_flags") else None,
         "financial_ratios": financials.get("ratios") or [],
-        "yearly_table": yearly_table,
+        "financial_scorecard": financial_scorecard,
+        "five_year_trend": five_year_trend,
+        "trend_insight_summary": trend_insight_summary,
         "qoq_highlights": highlights,
         "concall_evaluation": concall_html or "<p>No concall data.</p>",
         "concall_section_title": concall_section_title,
@@ -180,6 +192,8 @@ _green = "#059669"
 _green_light = "#e8f5e9"
 _red = "#dc2626"
 _red_light = "#ffebee"
+_amber = "#d97706"
+_amber_light = "#fffbeb"
 _fg = "#1c1917"
 _muted = "#78716c"
 _surface = "#f5f5f4"
@@ -227,13 +241,26 @@ def _pdf_fallback_reportlab(payload: dict) -> bytes:
     )
     flow = []
 
-    # ---- Title block (accent bar) ----
+    # ---- Title block (accent bar): name + price (black) + % (green/red), then symbol + time ----
     company_name = (ctx.get("company_name") or "").replace("&", "&amp;")
     symbol = (ctx.get("symbol") or "").replace("&", "&amp;")
+    screener_quote = ctx.get("screener_quote") or {}
+    price_part = ""
+    if screener_quote.get("current_price") is not None:
+        price_part = f" &nbsp; <font size=\"11\" color=\"#1c1917\">₹ {screener_quote['current_price']}</font>"
+        pct = (screener_quote.get("price_change_pct") or "").strip()
+        if pct:
+            hex_color = "#dc2626" if pct.startswith("-") else "#059669"
+            price_part += f" &nbsp; <font size=\"10\" color=\"{hex_color}\">{pct}</font>"
+    line1 = f'<b><font size="14" color="#ffffff">{company_name}</font></b>{price_part}'
+    line2_parts = [f'<font size="10" color="#ffffff">({symbol})</font>']
+    if screener_quote.get("last_price_updated"):
+        line2_parts.append(f'<font size="9" color="#e0f2f1"> {screener_quote["last_price_updated"]}</font>')
     meta_line = f"{ctx.get('exchange', 'NSE')} · Generated {ctx.get('generated_at', '')}"
+    line2_parts.append(f'<font size="9" color="#e0f2f1"> · {meta_line}</font>')
     title_table = Table([
-        [Paragraph(f'<b><font size="14">{company_name}</font></b> &nbsp; <font size="11" color="#ffffff">({symbol})</font>')],
-        [Paragraph(f'<font size="9">{meta_line}</font>')],
+        [Paragraph(line1)],
+        [Paragraph(" ".join(line2_parts))],
     ], colWidths=[16 * cm])
     title_table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), teal),
@@ -246,7 +273,30 @@ def _pdf_fallback_reportlab(payload: dict) -> bytes:
         ("BOTTOMPADDING", (0, 1), (-1, 1), 12),
     ]))
     flow.append(title_table)
-    flow.append(Spacer(1, 20))
+    flow.append(Spacer(1, 12))
+    # Key metrics (TTM) at top
+    key_metrics = ctx.get("key_metrics") or {}
+    if isinstance(key_metrics, dict) and (key_metrics.get("revenue_cr") or key_metrics.get("pat_cr") or key_metrics.get("roe") or key_metrics.get("market_cap")):
+        parts = ["<b>Key metrics (TTM):</b>"]
+        if key_metrics.get("market_cap"):
+            parts.append(f"Market Cap ₹ {key_metrics['market_cap']}")
+        if key_metrics.get("revenue_cr"):
+            parts.append(f"Revenue {key_metrics['revenue_cr']} Cr")
+        if key_metrics.get("pat_cr"):
+            parts.append(f"PAT {key_metrics['pat_cr']} Cr")
+        if key_metrics.get("roe"):
+            parts.append(f"ROE {key_metrics['roe']}")
+        if key_metrics.get("roce"):
+            parts.append(f"ROCE {key_metrics['roce']}")
+        if key_metrics.get("debt_equity"):
+            parts.append(f"D/E {key_metrics['debt_equity']}")
+        if key_metrics.get("eps"):
+            parts.append(f"EPS ₹{key_metrics['eps']}")
+        if key_metrics.get("debt_cr"):
+            parts.append(f"Debt {key_metrics['debt_cr']} Cr")
+        flow.append(Paragraph(" · ".join(parts).replace("&", "&amp;"), body_style))
+        flow.append(Spacer(1, 12))
+    flow.append(Spacer(1, 8))
 
     def section(heading: str, text_key: str) -> None:
         flow.append(Paragraph(heading.replace("&", "&amp;"), heading_style))
@@ -268,71 +318,121 @@ def _pdf_fallback_reportlab(payload: dict) -> bytes:
     ]:
         section(h, k)
 
-    # ---- Key ratios (teal header, zebra rows) ----
-    if ctx.get("financial_ratios"):
-        flow.append(Paragraph("Key ratios", heading_style))
-        flow.append(Table([[""]], colWidths=[16 * cm], rowHeights=[2]).setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, -1), teal),
-        ])))
-        flow.append(Spacer(1, 8))
-        data = [["Metric", "Value", "Period"]]
-        for r in ctx["financial_ratios"]:
-            data.append([str(r.get("metric", "")), str(r.get("value", "")), str(r.get("period", ""))])
-        t = Table(data, colWidths=[6 * cm, 4 * cm, 6 * cm])
-        st = TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), teal),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("FONTSIZE", (0, 0), (-1, -1), 9),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e7e5e4")),
-            ("LEFTPADDING", (0, 0), (-1, -1), 8),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-            ("TOPPADDING", (0, 0), (-1, -1), 6),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-        ])
-        for i in range(1, len(data)):
-            if i % 2 == 0:
-                st.add("BACKGROUND", (0, i), (-1, i), colors.HexColor(_surface2))
-        t.setStyle(st)
-        flow.append(t)
-        flow.append(Spacer(1, 16))
-
-    # ---- Yearly table (teal header, colored YoY %) ----
-    if ctx.get("yearly_table") and ctx["yearly_table"].get("headers"):
-        flow.append(Paragraph("Yearly trends + TTM", heading_style))
+    # ---- Financial Strength Scorecard (report card style) ----
+    scorecard = ctx.get("financial_scorecard")
+    if isinstance(scorecard, dict):
+        flow.append(Paragraph("Financial Strength Scorecard", heading_style))
         flow.append(Table([[""]], colWidths=[16 * cm], rowHeights=[2]).setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, -1), teal),
         ])))
         flow.append(Spacer(1, 8))
         intro = Paragraph(
-            '<font size="9" color="#78716c">Annual figures and TTM. Values in Crores unless noted. YoY % change highlighted.</font>',
+            '<font size="9" color="#78716c">30-second health check across 6 core signals (TTM and YoY).</font>',
+            body_style,
+        )
+        flow.append(intro)
+        flow.append(Spacer(1, 8))
+        # Grade + verdict row
+        tier = scorecard.get("verdict_tier") or "average"
+        letter_grade = scorecard.get("letter_grade") or "—"
+        score_val = scorecard.get("score", 0)
+        total_val = scorecard.get("total", 6)
+        verdict_text = (scorecard.get("verdict") or "").replace("&", "&amp;")
+        if tier == "strong":
+            grade_bg = colors.HexColor(_green)
+            verdict_bg = colors.HexColor(_green_light)
+            verdict_border = _green
+        elif tier == "weak":
+            grade_bg = colors.HexColor(_red)
+            verdict_bg = colors.HexColor(_red_light)
+            verdict_border = _red
+        else:
+            grade_bg = colors.HexColor(_amber)
+            verdict_bg = colors.HexColor(_amber_light)
+            verdict_border = _amber
+        grade_cell = Paragraph(
+            f'<b><font size="16" color="#ffffff">{letter_grade}</font></b>',
+            ParagraphStyle(name="Grade", fontSize=16, textColor=colors.white, alignment=1),
+        )
+        verdict_para = Paragraph(f'<b>Verdict:</b> {verdict_text}', body_style) if verdict_text else Paragraph("", body_style)
+        score_table = Table(
+            [[grade_cell, f"{score_val} / {total_val}", verdict_para]],
+            colWidths=[2 * cm, 2.5 * cm, 11.5 * cm],
+        )
+        score_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (0, -1), grade_bg),
+            ("BACKGROUND", (2, 0), (2, -1), verdict_bg),
+            ("BOX", (2, 0), (2, -1), 0.5, colors.HexColor(verdict_border)),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 8),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("FONTNAME", (1, 0), (1, -1), "Helvetica-Bold"),
+            ("FONTSIZE", (1, 0), (1, -1), 11),
+        ]))
+        flow.append(score_table)
+        flow.append(Spacer(1, 8))
+        # Metrics table: Metric | Value | Signal | Pass/Fail
+        metrics = scorecard.get("metrics") or []
+        if metrics:
+            m_headers = ["Metric", "Value", "Signal", "Result"]
+            m_data = [m_headers]
+            for m in metrics:
+                name = (m.get("name") or "").replace("&", "&amp;")
+                val = (m.get("display_value") or "").replace("&", "&amp;")
+                sig = (m.get("signal") or "").replace("&", "&amp;")
+                result = "Pass" if m.get("passed") else "Needs improvement"
+                m_data.append([name, val, sig, result])
+            m_table = Table(m_data, colWidths=[4 * cm, 3.5 * cm, 4.5 * cm, 4 * cm])
+            m_style = [
+                ("BACKGROUND", (0, 0), (-1, 0), teal),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, 0), 9),
+                ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
+                ("TOPPADDING", (0, 0), (-1, 0), 6),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e7e5e4")),
+            ]
+            for i, row in enumerate(m_data[1:], start=1):
+                passed = metrics[i - 1].get("passed")
+                if passed:
+                    m_style.append(("BACKGROUND", (0, i), (-1, i), colors.HexColor(_green_light)))
+                    m_style.append(("TEXTCOLOR", (3, i), (3, i), colors.HexColor(_green)))
+                else:
+                    m_style.append(("BACKGROUND", (0, i), (-1, i), colors.HexColor(_red_light)))
+                    m_style.append(("TEXTCOLOR", (3, i), (3, i), colors.HexColor(_red)))
+            m_table.setStyle(TableStyle(m_style))
+            flow.append(m_table)
+        flow.append(Spacer(1, 16))
+
+    # ---- 5-Year Financial Trend ----
+    five_year = ctx.get("five_year_trend") or {}
+    if five_year.get("headers") and five_year.get("rows"):
+        flow.append(Paragraph("5-Year Financial Trend", heading_style))
+        flow.append(Table([[""]], colWidths=[16 * cm], rowHeights=[2]).setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), teal),
+        ])))
+        flow.append(Spacer(1, 8))
+        intro = Paragraph(
+            '<font size="9" color="#78716c">Latest 5 completed financial years. Values in Rs Crores unless noted.</font>',
             body_style,
         )
         flow.append(intro)
         flow.append(Spacer(1, 6))
-        headers = ["Metric"] + list(ctx["yearly_table"]["headers"])
+        headers = ["Metric", "Unit"] + list(five_year["headers"])
         data = [headers]
-        for row in ctx["yearly_table"].get("rows", []):
-            cells = [row.get("metric", "")]
-            for c in row.get("cells", []):
-                v = c.get("value_display", "")
-                pct = c.get("qoq_pct")
-                if pct is not None:
-                    color = _green if pct >= 0 else _red
-                    cells.append(Paragraph(
-                        f'<font size="8">{v}</font><br/><font size="7" color="{color}">({pct:+.1f}%)</font>',
-                        ParagraphStyle(name="Cell", fontSize=8),
-                    ))
-                else:
-                    cells.append(Paragraph(f'<font size="8">{v}</font>', ParagraphStyle(name="Cell", fontSize=8)))
+        for row in five_year.get("rows", []):
+            cells = [row.get("metric", ""), row.get("unit", "")]
+            cells.extend(str(c) for c in row.get("cells", []))
             data.append(cells)
         col_count = len(headers)
         col_width = 16.0 * cm / col_count
-        t = Table(data, colWidths=[3.5 * cm] + [col_width] * (col_count - 1))
+        t = Table(data, colWidths=[3.2 * cm, 1.2 * cm] + [col_width] * (col_count - 2))
         st = TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), teal),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("FONTSIZE", (0, 0), (-1, 0), 8),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
             ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
             ("BACKGROUND", (0, 1), (0, -1), colors.HexColor(_surface)),
             ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e7e5e4")),
@@ -340,41 +440,47 @@ def _pdf_fallback_reportlab(payload: dict) -> bytes:
             ("RIGHTPADDING", (0, 0), (-1, -1), 6),
             ("TOPPADDING", (0, 0), (-1, -1), 5),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-            ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
+            ("ALIGN", (2, 0), (-1, -1), "RIGHT"),
         ])
         for i in range(1, len(data)):
             if i % 2 == 0:
                 st.add("BACKGROUND", (1, i), (-1, i), colors.HexColor(_surface2))
         t.setStyle(st)
         flow.append(t)
+        flow.append(Spacer(1, 8))
+        if ctx.get("trend_insight_summary"):
+            flow.append(Paragraph(
+                ctx["trend_insight_summary"].replace("&", "&amp;").replace("\n", "<br/>"),
+                body_style,
+            ))
         flow.append(Spacer(1, 12))
 
-        # Strengths / Concerns boxes
-        highlights = ctx.get("qoq_highlights") or {}
-        if isinstance(highlights, dict):
-            for box_title, color_hex, bg_hex in [
-                ("Strengths (TTM & balance sheet)", _green, _green_light),
-                ("Concerns (TTM & balance sheet)", _red, _red_light),
-            ]:
-                points = highlights.get("good" if "Strengths" in box_title else "bad") or []
-                if not points:
-                    continue
-                content = "<br/>".join("• " + str(p).replace("&", "&amp;") for p in points[:8])
-                box = Table([
-                    [Paragraph(f'<b><font color="{color_hex}" size="10">{box_title.replace("&", "&amp;")}</font></b>')],
-                    [Paragraph(f'<font size="9" color="#1c1917">{content}</font>')],
-                ], colWidths=[16 * cm])
-                box.setStyle(TableStyle([
-                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(bg_hex)),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 12),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 12),
-                    ("TOPPADDING", (0, 0), (-1, -1), 10),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
-                    ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor(color_hex)),
-                    ("LINEBELOW", (0, 0), (-1, 0), 1, colors.HexColor(color_hex)),
-                ]))
-                flow.append(box)
-                flow.append(Spacer(1, 12))
+    # ---- Balance sheet highlights (Strengths / Concerns) ----
+    highlights = ctx.get("qoq_highlights") or {}
+    if isinstance(highlights, dict):
+        for box_title, color_hex, bg_hex in [
+            ("Strengths", _green, _green_light),
+            ("Concerns", _red, _red_light),
+        ]:
+            points = highlights.get("good" if "Strengths" in box_title else "bad") or []
+            if not points:
+                continue
+            content = "<br/>".join("• " + str(p).replace("&", "&amp;") for p in points[:8])
+            box = Table([
+                [Paragraph(f'<b><font color="{color_hex}" size="10">{box_title.replace("&", "&amp;")} (TTM)</font></b>')],
+                [Paragraph(f'<font size="9" color="#1c1917">{content}</font>')],
+            ], colWidths=[16 * cm])
+            box.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(bg_hex)),
+                ("LEFTPADDING", (0, 0), (-1, -1), 12),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+                ("TOPPADDING", (0, 0), (-1, -1), 10),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+                ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor(color_hex)),
+                ("LINEBELOW", (0, 0), (-1, 0), 1, colors.HexColor(color_hex)),
+            ]))
+            flow.append(box)
+            flow.append(Spacer(1, 12))
 
     if ctx.get("auditor_flags"):
         flow.append(Paragraph("Auditor Flags & Qualifications".replace("&", "&amp;"), heading_style))
