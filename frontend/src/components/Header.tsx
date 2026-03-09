@@ -1,10 +1,15 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 
 export default function Header() {
   const { user, isAuthenticated, signIn, signOut } = useAuth()
   const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [pictureError, setPictureError] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    setPictureError(false)
+  }, [user?.id, user?.picture])
 
   const handleSignOut = async () => {
     setDropdownOpen(false)
@@ -24,8 +29,14 @@ export default function Header() {
               aria-label="User menu"
               aria-expanded={dropdownOpen}
             >
-              {user.picture ? (
-                <img src={user.picture} alt={user.name ?? user.email} className="user-avatar" />
+              {user.picture && !pictureError ? (
+                <img
+                  src={user.picture}
+                  alt={user.name ?? user.email}
+                  className="user-avatar"
+                  referrerPolicy="no-referrer"
+                  onError={() => setPictureError(true)}
+                />
               ) : (
                 <span className="user-avatar-fallback">
                   {(user.name ?? user.email).charAt(0).toUpperCase()}
@@ -36,8 +47,18 @@ export default function Header() {
             {dropdownOpen && (
               <div className="user-dropdown" role="menu">
                 <div className="user-dropdown-info">
-                  {user.picture && (
-                    <img src={user.picture} alt={user.name ?? user.email} className="user-dropdown-avatar" />
+                  {user.picture && !pictureError ? (
+                    <img
+                      src={user.picture}
+                      alt={user.name ?? user.email}
+                      className="user-dropdown-avatar"
+                      referrerPolicy="no-referrer"
+                      onError={() => setPictureError(true)}
+                    />
+                  ) : (
+                    <span className="user-dropdown-avatar user-avatar-fallback">
+                      {(user.name ?? user.email).charAt(0).toUpperCase()}
+                    </span>
                   )}
                   <div>
                     <div className="user-dropdown-name">{user.name}</div>

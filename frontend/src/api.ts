@@ -22,7 +22,11 @@ function authHeaders(): Record<string, string> {
 }
 
 export function loginWithGoogle(): void {
-  window.location.href = `${API_BASE}/auth/google`
+  const returnTo = window.location.pathname + window.location.search
+  const params = new URLSearchParams()
+  if (returnTo && returnTo !== '/') params.set('return_to', returnTo)
+  const qs = params.toString()
+  window.location.href = `${API_BASE}/auth/google${qs ? `?${qs}` : ''}`
 }
 
 export interface User {

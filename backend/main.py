@@ -114,11 +114,29 @@ app.add_middleware(
 )
 
 
+def _valid_return_path(path: str | None) -> bool:
+    """Return True if path is a safe relative path (no open redirect)."""
+    if not path or not path.startswith("/"):
+        return False
+    if "//" in path or ":" in path:
+        return False
+    return True
+
+
 @app.get("/auth/google")
-async def auth_google_login():
-    """Redirect to Google OAuth2 consent screen (sets CSRF state cookie)."""
+async def auth_google_login(request: Request, return_to: str | None = None):
+    """Redirect to Google OAuth2 consent screen (sets CSRF state cookie).
+    If return_to is a safe path, redirect back there after login."""
     redirect = RedirectResponse(url="")  # url filled below after state is known
     state = generate_oauth_state(redirect)
+    if _valid_return_path(return_to):
+        redirect.set_cookie(
+            key="oauth_return_to",
+            value=return_to,
+            httponly=True,
+            samesite="lax",
+            max_age=600,
+        )
     redirect.headers["location"] = google_auth_url(state)
     return redirect
 
@@ -159,7 +177,14 @@ async def auth_google_callback(
         log_error("auth_signin", f"OAuth callback server error: {exc}", exc=exc)
         return RedirectResponse(url=f"{frontend_url}/?auth_error=server_error")
 
-    redirect = RedirectResponse(url=f"{frontend_url}/?token={token}")
+    return_to = request.cookies.get("oauth_return_to")
+    if _valid_return_path(return_to):
+        sep = "&" if "?" in return_to else "?"
+        redirect_url = f"{frontend_url}{return_to}{sep}token={token}"
+        redirect = RedirectResponse(url=redirect_url)
+        redirect.delete_cookie("oauth_return_to")
+    else:
+        redirect = RedirectResponse(url=f"{frontend_url}/?token={token}")
     redirect.delete_cookie("oauth_state")
     return redirect
 
