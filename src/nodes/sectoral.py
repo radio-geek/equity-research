@@ -51,11 +51,14 @@ def _parse_sectoral_response(text: str) -> tuple[str, list[str], list[str]]:
 
 def sectoral(state: ResearchState) -> dict[str, Any]:
     """Generate sectoral headwinds/tailwinds; return state update."""
+    symbol = state.get("symbol") or ""
+    logger.info("sectoral: starting for %s", symbol)
     company_name = state.get("company_name") or state.get("symbol") or ""
     sector = state.get("sector") or state.get("industry") or ""
     system, user = sectoral_prompt(company_name, sector)
     text = invoke_llm(system, user)
     analysis, headwinds, tailwinds = _parse_sectoral_response(text or "")
+    logger.info("sectoral: done for %s", symbol)
     return {
         "sectoral_analysis": analysis,
         "sectoral_headwinds": headwinds,

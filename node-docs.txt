@@ -417,3 +417,39 @@ KNOWN LIMITATIONS / FUTURE IMPROVEMENTS
 - Web search may not always return recent policy URLs; links depend on LLM citing correctly
 - Consider adding India-specific policy sources (e.g. PIB, ministry circulars) in prompt
 ================================================================================
+
+================================================================================
+NODE: qoq_financials (Financial Evaluation)
+File: src/nodes/qoq_financials.py
+Data: src/data/yearly_financials.py (fetch_yearly_financials, get_ttm_statements), state.financial_ratios
+Report helpers: src/report/financial_evaluation.py (scorecard, 5-year table, trend insight)
+Report: src/report/templates/base.html — Financial Strength Scorecard, 5-Year Financial Trend, trend insight, Balance Sheet Highlights
+        backend/pdf_render.py — same sections in HTML and ReportLab fallback
+================================================================================
+
+WHAT THIS NODE DOES
+--------------------
+1. Fetches yearly + TTM metrics from Screener.in (scraped; URL https://www.screener.in/company/{symbol}/consolidated/) and TTM statements (P&L TTM column + latest BS).
+2. Builds Financial Strength Scorecard (6 signals: revenue growth >10%, profit growth > revenue growth, ROE >15%, D/E <0.5, positive TTM OCF, margins stable/improving). Score 0–6, verdict text, verdict_tier (strong|average|weak), letter_grade (A/B/C/D/F). Report card UI: prominent grade + verdict + metric rows with Pass/Needs improvement.
+3. Builds 5-Year Financial Trend table (latest 5 years + TTM column from Screener): Revenue, Revenue Growth %, PAT, PAT Growth %, EPS, EBITDA Margin %, NPM %, Debt, D/E, OCF (TTM = —), FCF. ROE and ROCE removed from table; shown in initial tiles from Screener ratios table (TTM/latest).
+4. Generates 2–3 line trend insight via LLM from the 5-year table.
+5. Optionally generates good/bad balance sheet highlights from TTM statements via LLM.
+
+DATA FLOW
+----------
+Inputs: symbol, exchange, company_name, financial_ratios (from resolve_company)
+Outputs: yearly_metrics, qoq_highlights, financial_scorecard, five_year_trend, trend_insight_summary, screener_quote (current_price, market_cap, last_price_updated from Screener company page)
+
+SCORECARD RULES (financial_evaluation.build_financial_scorecard)
+-----------------------------------------------------------------
+Uses same fetched (Screener) values. ROE and Debt/Equity prefer TTM when available. Revenue/Profit growth from latest YoY. OCF TTM = N/A (Screener has no CF TTM). Rules: Revenue Growth YoY > 10%; Profit Growth > Revenue Growth; ROE > 15%; Debt/Equity < 0.5; OCF TTM positive; Margins stable or improving.
+
+5-YEAR TABLE (financial_evaluation.build_five_year_trend_table)
+-----------------------------------------------------------------
+Includes last 5 year rows + TTM column. Rows: Revenue, Revenue Growth, PAT, PAT Growth, EPS, EBITDA Margin, NPM, Debt, Debt/Equity, Operating Cash Flow (TTM cell = —), Free Cash Flow. ROE and ROCE omitted; TTM ROE/ROCE come from Screener ratios table and are shown in initial tiles. All monetary in Crores.
+
+CSS / REPORT
+-------------
+Scorecard (report card style): .scorecard-card, .scorecard-intro, .scorecard-header, .scorecard-grade-wrap, .scorecard-letter[data-tier], .scorecard-fraction, .scorecard-verdict-wrap, .scorecard-verdict-strong/average/weak, .scorecard-metrics, .scorecard-metric, .scorecard-metric-pass/fail, .scorecard-metric-name/value/signal/badge.
+.five-year-table, .five-year-unit, .trend-insight
+================================================================================

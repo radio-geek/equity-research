@@ -89,7 +89,12 @@ export interface ReportPayload {
     sector?: string
     industry?: string
   }
-  company?: { meta?: unknown; quote?: unknown; shareholding?: unknown[] }
+  company?: {
+    meta?: unknown
+    quote?: unknown
+    shareholding?: unknown[]
+    screener_quote?: { current_price?: number; price_change_pct?: string; market_cap?: string; last_price_updated?: string }
+  }
   executive_summary?: string
   company_overview?: string
   management_research?: string
@@ -105,6 +110,16 @@ export interface ReportPayload {
     ratios?: Array<{ metric?: string; value?: number | string; period?: string }>
     yearly_metrics?: Array<Record<string, number | string | null | undefined>>
     highlights?: { good?: string[]; bad?: string[] }
+    financial_scorecard?: {
+      score?: number
+      total?: number
+      verdict?: string
+      verdict_tier?: 'strong' | 'average' | 'weak'
+      letter_grade?: string
+      metrics?: Array<{ name?: string; display_value?: string; passed?: boolean; signal?: string }>
+    }
+    five_year_trend?: { headers?: string[]; rows?: Array<{ metric?: string; unit?: string; cells?: string[] }> }
+    trend_insight_summary?: string
   }
   generated_at?: string
 }
@@ -122,10 +137,21 @@ export interface ReportView {
   concall?: ReportPayload['concall']
   concallUpdates?: string
   yearlyMetrics?: Array<Record<string, number | string | null | undefined>>
+  financialScorecard?: {
+    score?: number
+    total?: number
+    verdict?: string
+    verdictTier?: 'strong' | 'average' | 'weak'
+    letterGrade?: string
+    metrics?: Array<{ name?: string; display_value?: string; passed?: boolean; signal?: string }>
+  }
+  fiveYearTrend?: { headers?: string[]; rows?: Array<{ metric?: string; unit?: string; cells?: string[] }> }
+  trendInsightSummary?: string
   sectoralHeadwinds?: string[]
   sectoralTailwinds?: string[]
   greenFlags?: string[]
   redFlags?: string[]
+  screenerQuote?: { currentPrice?: number; priceChangePct?: string; marketCap?: string; lastPriceUpdated?: string }
 }
 
 export function mapReportPayloadToView(payload: ReportPayload | null | undefined): ReportView {
@@ -153,10 +179,32 @@ export function mapReportPayloadToView(payload: ReportPayload | null | undefined
     auditorFlags: payload.auditor_flags ?? undefined,
     concall: payload.concall ?? undefined,
     yearlyMetrics: financials.yearly_metrics ?? [],
+    financialScorecard: financials.financial_scorecard
+      ? {
+          score: financials.financial_scorecard.score,
+          total: financials.financial_scorecard.total,
+          verdict: financials.financial_scorecard.verdict,
+          verdictTier: financials.financial_scorecard.verdict_tier,
+          letterGrade: financials.financial_scorecard.letter_grade,
+          metrics: financials.financial_scorecard.metrics,
+        }
+      : undefined,
+    fiveYearTrend: financials.five_year_trend,
+    trendInsightSummary: financials.trend_insight_summary ?? undefined,
     sectoralHeadwinds: sectoral.headwinds ?? [],
     sectoralTailwinds: sectoral.tailwinds ?? [],
     greenFlags: highlights.good ?? [],
     redFlags: highlights.bad ?? [],
+    screenerQuote: (() => {
+      const sq = payload.company?.screener_quote
+      if (!sq) return undefined
+      return {
+        currentPrice: sq.current_price,
+        priceChangePct: sq.price_change_pct,
+        marketCap: sq.market_cap,
+        lastPriceUpdated: sq.last_price_updated,
+      }
+    })(),
   }
 }
 

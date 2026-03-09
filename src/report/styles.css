@@ -24,6 +24,16 @@ body {
   letter-spacing: 0.02em;
 }
 
+.key-metrics {
+  font-size: 10pt;
+  color: #444;
+  padding: 0.5em 1em;
+  margin: -0.5em 0 1em 0;
+  background: #f5f5f4;
+  border-radius: 6px;
+  border-left: 4px solid #0f766e;
+}
+
 h1 {
   font-size: 16pt;
   font-weight: 600;
@@ -398,6 +408,176 @@ tr:nth-child(even) {
   border-left: 4px solid #90a4ae;
   border-radius: 4px;
   font-size: 9.5pt;
+  color: #37474f;
+}
+
+/* ============================================================
+   Financial Strength Scorecard (report card style)
+   ============================================================ */
+
+.scorecard-card {
+  border: 1px solid #e7e5e4;
+  border-radius: 10px;
+  padding: 1em 1.2em;
+  margin: 0.5em 0 1.2em 0;
+  background: #fafaf9;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.scorecard-intro {
+  color: #78716c;
+  font-size: 9.5pt;
+  margin: 0 0 1em 0;
+}
+
+.scorecard-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1.2em;
+  margin-bottom: 1em;
+  padding-bottom: 1em;
+  border-bottom: 1px solid #e7e5e4;
+}
+
+.scorecard-grade-wrap {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4em;
+}
+
+.scorecard-letter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.2em;
+  height: 2.2em;
+  font-size: 18pt;
+  font-weight: 700;
+  border-radius: 8px;
+  line-height: 1;
+}
+.scorecard-letter[data-tier="strong"] {
+  background: #059669;
+  color: #fff;
+}
+.scorecard-letter[data-tier="average"] {
+  background: #d97706;
+  color: #fff;
+}
+.scorecard-letter[data-tier="weak"] {
+  background: #dc2626;
+  color: #fff;
+}
+
+.scorecard-fraction {
+  font-size: 14pt;
+  font-weight: 600;
+  color: #1c1917;
+}
+
+.scorecard-verdict-wrap {
+  flex: 1;
+  min-width: 200px;
+  padding: 0.5em 0.75em;
+  border-radius: 6px;
+  border-left: 4px solid;
+}
+.scorecard-verdict-strong {
+  background: #ecfdf5;
+  border-left-color: #059669;
+}
+.scorecard-verdict-average {
+  background: #fffbeb;
+  border-left-color: #d97706;
+}
+.scorecard-verdict-weak {
+  background: #fef2f2;
+  border-left-color: #dc2626;
+}
+
+.scorecard-verdict-label {
+  font-weight: 600;
+  font-size: 10pt;
+  margin-right: 0.35em;
+}
+.scorecard-verdict-strong .scorecard-verdict-label { color: #047857; }
+.scorecard-verdict-average .scorecard-verdict-label { color: #b45309; }
+.scorecard-verdict-weak .scorecard-verdict-label { color: #b91c1c; }
+
+.scorecard-verdict-text {
+  font-size: 10pt;
+  color: #37474f;
+}
+
+.scorecard-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35em;
+}
+
+.scorecard-metric {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  align-items: center;
+  gap: 0.6em;
+  padding: 0.4em 0.5em;
+  font-size: 10pt;
+  border-radius: 6px;
+}
+.scorecard-metric-pass {
+  background: #f0fdf4;
+  border-left: 3px solid #059669;
+}
+.scorecard-metric-fail {
+  background: #fef2f2;
+  border-left: 3px solid #dc2626;
+}
+
+.scorecard-metric-name {
+  font-weight: 600;
+  color: #1c1917;
+}
+.scorecard-metric-value {
+  color: #37474f;
+}
+.scorecard-metric-signal {
+  color: #78716c;
+  font-size: 9pt;
+}
+.scorecard-metric-badge {
+  font-size: 8.5pt;
+  font-weight: 600;
+  padding: 0.2em 0.5em;
+  border-radius: 4px;
+  justify-self: end;
+}
+.scorecard-metric-pass .scorecard-metric-badge {
+  background: #059669;
+  color: #fff;
+}
+.scorecard-metric-fail .scorecard-metric-badge {
+  background: #dc2626;
+  color: #fff;
+}
+
+/* ============================================================
+   Five-Year Trend Table
+   ============================================================ */
+
+.five-year-table .five-year-unit {
+  font-size: 8.5pt;
+  color: #666;
+  width: 4em;
+}
+
+.trend-insight {
+  margin: 0.8em 0 1.2em 0;
+  padding: 0.6em 0.8em;
+  background: #f8fafc;
+  border-left: 4px solid #0f766e;
+  border-radius: 4px;
+  font-size: 10pt;
   color: #37474f;
 }
 

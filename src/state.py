@@ -36,7 +36,12 @@ class ResearchState(TypedDict, total=False):
 
     # Set by qoq_financials node (yearly + TTM trends, LLM highlights from TTM)
     yearly_metrics: NotRequired[list[dict]]
+    screener_quote: NotRequired[dict]  # { current_price, market_cap, last_price_updated } from Screener company page
     qoq_highlights: NotRequired[dict]  # {"good": [...], "bad": [...]}
+    # Financial evaluation (scorecard, 5-year trend, trend insight)
+    financial_scorecard: NotRequired[dict]  # { score, total, verdict, verdict_tier, letter_grade, metrics }
+    five_year_trend: NotRequired[dict]  # { headers, rows }
+    trend_insight_summary: NotRequired[str]
 
     # Research outputs (one per node)
     company_overview: str
