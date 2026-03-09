@@ -22,7 +22,11 @@ function authHeaders(): Record<string, string> {
 }
 
 export function loginWithGoogle(): void {
-  window.location.href = `${API_BASE}/auth/google`
+  const returnTo = window.location.pathname + window.location.search
+  const params = new URLSearchParams()
+  if (returnTo && returnTo !== '/') params.set('return_to', returnTo)
+  const qs = params.toString()
+  window.location.href = `${API_BASE}/auth/google${qs ? `?${qs}` : ''}`
 }
 
 export interface User {
@@ -164,13 +168,21 @@ export interface ReportStatus {
 }
 
 export async function getReportStatus(reportId: string): Promise<ReportStatus> {
-  const res = await fetch(`${API_BASE}/api/reports/${reportId}`)
+  const res = await fetch(`${API_BASE}/api/reports/${reportId}`, {
+    headers: authHeaders(),
+  })
   if (!res.ok) throw new Error(res.statusText)
   return res.json()
 }
 
 export async function getReportPdfBlob(reportId: string): Promise<Blob> {
-  const res = await fetch(`${API_BASE}/api/reports/${reportId}/pdf`)
+  const res = await fetch(`${API_BASE}/api/reports/${reportId}/pdf`, {
+    headers: authHeaders(),
+  })
+  if (res.status === 401) {
+    clearToken()
+    throw new Error('Unauthorized')
+  }
   if (!res.ok) throw new Error(res.statusText)
   return res.blob()
 }

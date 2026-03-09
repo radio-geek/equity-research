@@ -2,6 +2,7 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { ReportView } from '../api'
+import { useAuth } from '../contexts/AuthContext'
 import { Section } from '../components/Section'
 import { FinancialTable } from '../components/FinancialTable'
 import { FinancialCharts } from '../components/FinancialCharts'
@@ -9,11 +10,21 @@ import { SectoralCard } from '../components/SectoralCard'
 import { FlagsList } from '../components/FlagsList'
 import { ConcallSection } from '../components/ConcallSection'
 
+function LockIcon() {
+  return (
+    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </svg>
+  )
+}
+
 interface ReportAProps {
   report: ReportView
 }
 
 export function ReportA({ report }: ReportAProps) {
+  const { isAuthenticated, signIn } = useAuth()
   const ttm = report.yearlyMetrics?.find((m) => m.period_label === 'TTM') ?? report.yearlyMetrics?.[report.yearlyMetrics.length - 1]
   const kpis = ttm
     ? [
@@ -73,22 +84,80 @@ export function ReportA({ report }: ReportAProps) {
         </Section>
       )}
 
-      <ConcallSection concall={report.concall ?? null} concallUpdatesFallback={report.concallUpdates} />
-
-      <Section title="Financial data (YoY & TTM)">
-        <FinancialCharts report={report} height={240} />
-        <div style={{ marginTop: '1.5rem' }}>
-          <FinancialTable report={report} />
-        </div>
-      </Section>
-
-      <Section title="Sectoral headwinds & tailwinds">
-        <SectoralCard headwinds={report.sectoralHeadwinds} tailwinds={report.sectoralTailwinds} />
-      </Section>
-
-      <Section title="Green & red flags in financial data">
-        <FlagsList greenFlags={report.greenFlags} redFlags={report.redFlags} />
-      </Section>
+      {isAuthenticated ? (
+        <>
+          <Section title="Financial data (YoY & TTM)">
+            <FinancialCharts report={report} height={240} />
+            <div style={{ marginTop: '1.5rem' }}>
+              <FinancialTable report={report} />
+            </div>
+          </Section>
+          <ConcallSection concall={report.concall ?? null} concallUpdatesFallback={report.concallUpdates} />
+          <Section title="Sectoral headwinds & tailwinds">
+            <SectoralCard headwinds={report.sectoralHeadwinds} tailwinds={report.sectoralTailwinds} />
+          </Section>
+          <Section title="Green & red flags in financial data">
+            <FlagsList greenFlags={report.greenFlags} redFlags={report.redFlags} />
+          </Section>
+        </>
+      ) : (
+        <>
+          <Section title="Financial data (YoY & TTM)">
+            <FinancialCharts report={report} height={240} />
+            <div style={{ marginTop: '1.5rem' }}>
+              <FinancialTable report={report} />
+            </div>
+          </Section>
+          <Section title="Concall evaluation">
+            <div className="report-gated-wrap">
+              <div className="report-gated-blur" aria-hidden>
+                <ConcallSection concall={report.concall ?? null} concallUpdatesFallback={report.concallUpdates} />
+              </div>
+              <div className="report-gated-overlay">
+                <span className="report-gated-lock" aria-hidden>
+                  <LockIcon />
+                </span>
+                <p className="report-gated-text">Sign in to view concall evaluation.</p>
+                <button type="button" className="report-download-btn report-gated-btn" onClick={signIn}>
+                  Sign in
+                </button>
+              </div>
+            </div>
+          </Section>
+          <Section title="Sectoral headwinds & tailwinds">
+            <div className="report-gated-wrap">
+              <div className="report-gated-blur" aria-hidden>
+                <SectoralCard headwinds={report.sectoralHeadwinds} tailwinds={report.sectoralTailwinds} />
+              </div>
+              <div className="report-gated-overlay">
+                <span className="report-gated-lock" aria-hidden>
+                  <LockIcon />
+                </span>
+                <p className="report-gated-text">Sign in to view sectoral headwinds & tailwinds.</p>
+                <button type="button" className="report-download-btn report-gated-btn" onClick={signIn}>
+                  Sign in
+                </button>
+              </div>
+            </div>
+          </Section>
+          <Section title="Green & red flags in financial data">
+            <div className="report-gated-wrap">
+              <div className="report-gated-blur" aria-hidden>
+                <FlagsList greenFlags={report.greenFlags} redFlags={report.redFlags} />
+              </div>
+              <div className="report-gated-overlay">
+                <span className="report-gated-lock" aria-hidden>
+                  <LockIcon />
+                </span>
+                <p className="report-gated-text">Sign in to view green & red flags in financial data.</p>
+                <button type="button" className="report-download-btn report-gated-btn" onClick={signIn}>
+                  Sign in
+                </button>
+              </div>
+            </div>
+          </Section>
+        </>
+      )}
     </div>
   )
 }

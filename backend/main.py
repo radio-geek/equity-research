@@ -32,6 +32,7 @@ from backend.auth import (
     exchange_code_for_user,
     generate_oauth_state,
     get_current_user,
+    get_current_user_optional,
     get_session_id_from_request,
     google_auth_url,
     revoke_session,
@@ -97,6 +98,12 @@ _vercel_url = os.environ.get("VERCEL_URL")
 if _vercel_url:
     _origins_set.add(f"https://{_vercel_url}")
     _origins_set.add(f"http://{_vercel_url}")
+# Optional: comma-separated list of extra origins (e.g. GitHub Pages: https://user.github.io)
+_extra = os.environ.get("ADDITIONAL_CORS_ORIGINS", "")
+for origin in _extra.split(","):
+    origin = origin.strip()
+    if origin:
+        _origins_set.add(origin)
 _allowed_origins = list(_origins_set)
 app.add_middleware(
     CORSMiddleware,
@@ -107,11 +114,29 @@ app.add_middleware(
 )
 
 
+def _valid_return_path(path: str | None) -> bool:
+    """Return True if path is a safe relative path (no open redirect)."""
+    if not path or not path.startswith("/"):
+        return False
+    if "//" in path or ":" in path:
+        return False
+    return True
+
+
 @app.get("/auth/google")
-async def auth_google_login():
-    """Redirect to Google OAuth2 consent screen (sets CSRF state cookie)."""
+async def auth_google_login(request: Request, return_to: str | None = None):
+    """Redirect to Google OAuth2 consent screen (sets CSRF state cookie).
+    If return_to is a safe path, redirect back there after login."""
     redirect = RedirectResponse(url="")  # url filled below after state is known
     state = generate_oauth_state(redirect)
+    if _valid_return_path(return_to):
+        redirect.set_cookie(
+            key="oauth_return_to",
+            value=return_to,
+            httponly=True,
+            samesite="lax",
+            max_age=600,
+        )
     redirect.headers["location"] = google_auth_url(state)
     return redirect
 
@@ -152,7 +177,14 @@ async def auth_google_callback(
         log_error("auth_signin", f"OAuth callback server error: {exc}", exc=exc)
         return RedirectResponse(url=f"{frontend_url}/?auth_error=server_error")
 
-    redirect = RedirectResponse(url=f"{frontend_url}/?token={token}")
+    return_to = request.cookies.get("oauth_return_to")
+    if _valid_return_path(return_to):
+        sep = "&" if "?" in return_to else "?"
+        redirect_url = f"{frontend_url}{return_to}{sep}token={token}"
+        redirect = RedirectResponse(url=redirect_url)
+        redirect.delete_cookie("oauth_return_to")
+    else:
+        redirect = RedirectResponse(url=f"{frontend_url}/?token={token}")
     redirect.delete_cookie("oauth_state")
     return redirect
 
@@ -197,7 +229,8 @@ async def api_reports_create(body: CreateReportRequest):
 
 @app.get("/api/reports/{report_id}")
 async def api_reports_status(report_id: str):
-    """Return { status, report?, error? }. When completed, report is the full JSON payload."""
+    """Return { status, report?, error? }. When completed, report is the full JSON payload.
+    Premium sections (concall, sectoral) are gated by blur/sign-in on the frontend."""
     store = get_store()
     info = get_report_status(store, report_id)
     if info is None:
@@ -215,8 +248,8 @@ async def api_reports_html(report_id: str):
 
 
 @app.get("/api/reports/{report_id}/pdf")
-async def api_reports_pdf(report_id: str):
-    """Return report as PDF attachment when status is completed."""
+async def api_reports_pdf(report_id: str, current_user: dict = Depends(get_current_user)):
+    """Return report as PDF attachment when status is completed. Requires authentication."""
     store = get_store()
     job = job_get(store, report_id)
     if job is None or job.get("status") != "completed":
