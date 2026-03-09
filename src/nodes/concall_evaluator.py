@@ -55,7 +55,6 @@ def concall_evaluator(state: ResearchState) -> dict[str, Any]:
 
     # Step 1: Load transcripts from DB cache (populated by refresh_transcript_cache before pipeline)
     transcripts = []
-    use_web_search = False
     try:
         transcripts = get_transcripts_from_db(symbol, exchange)
         if transcripts:
@@ -64,25 +63,22 @@ def concall_evaluator(state: ResearchState) -> dict[str, Any]:
                 len(transcripts), transcripts[0].get("segment", "?"),
             )
         else:
-            logger.warning(
-                "concall_evaluator: no DB transcripts for %s — falling back to web search", symbol
-            )
-            use_web_search = True
+            logger.warning("concall_evaluator: no DB transcripts for %s — will use web search only", symbol)
     except Exception as e:
-        logger.warning("concall_evaluator: DB read failed (%s) — falling back to web search", e)
-        use_web_search = True
+        logger.warning("concall_evaluator: DB read failed (%s) — will use web search only", e)
 
-    # Step 2: Build prompt — with real transcripts (no web search) or web search fallback
+    # Step 2: Build prompt — always use web search so quarters not covered by NSE PDFs
+    # can be filled from web (hybrid: transcripts for covered quarters, web for the rest)
     system, user = concall_structured_prompt(
         company_name, symbol, exchange,
-        transcripts=transcripts if not use_web_search else None,
+        transcripts=transcripts or None,
     )
 
     logger.info(
-        "concall_evaluator: invoking LLM (use_web_search=%s, transcripts=%d)",
-        use_web_search, len(transcripts),
+        "concall_evaluator: invoking LLM (web_search=always, transcripts=%d)",
+        len(transcripts),
     )
-    raw = invoke_llm(system, user, use_web_search=use_web_search)
+    raw = invoke_llm(system, user, use_web_search=True)
     logger.debug("concall_evaluator: raw LLM output length=%d chars", len(raw or ""))
 
     # Step 3: Parse and validate JSON output
@@ -107,7 +103,7 @@ def concall_evaluator(state: ResearchState) -> dict[str, Any]:
                     "concall_evaluator: done, type=%s, cards=%d, source=%s",
                     data.get("type"),
                     len(data.get("cards", [])),
-                    "nse_transcripts" if not use_web_search else "web_search",
+                    "nse_transcripts+web" if transcripts else "web_search",
                 )
             else:
                 logger.warning("concall_evaluator: parsed JSON failed shape validation")
