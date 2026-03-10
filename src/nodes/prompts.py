@@ -704,6 +704,89 @@ def sectoral_prompt(company_name: str, sector: str) -> tuple[str, str]:
     return system, user
 
 
+def company_updates_prompt(
+    company_name: str,
+    symbol: str,
+    exchange: str,
+    updates_data: dict,
+) -> tuple[str, str]:
+    """Prompt for companies with NO concalls in the last 8 quarters.
+
+    Analyses PPT links, order wins, and press releases to produce a
+    structured 'no_concall_updates' JSON for the frontend.
+    """
+    ppt_links = updates_data.get("ppt_links") or []
+    order_items = updates_data.get("order_items") or []
+    press_items = updates_data.get("press_items") or []
+
+    ppt_block = ""
+    if ppt_links:
+        lines = [f"  - [{p['period']}]({p['link']})" for p in ppt_links]
+        ppt_block = "INVESTOR PRESENTATIONS (from Screener):\n" + "\n".join(lines)
+
+    order_block = ""
+    if order_items:
+        lines = [f"  - [{i['date']}] {i['description']} | link: {i['link']}" for i in order_items]
+        order_block = "ORDER WINS / CONTRACTS (from NSE filings):\n" + "\n".join(lines)
+
+    press_block = ""
+    if press_items:
+        lines = [f"  - [{i['date']}] {i['description']} | link: {i['link']}" for i in press_items]
+        press_block = "PRESS RELEASES / COMPANY UPDATES (from NSE filings):\n" + "\n".join(lines)
+
+    raw_data = "\n\n".join(b for b in [ppt_block, order_block, press_block] if b) or "(no structured data — use web search)"
+
+    system = """You are an equity research analyst. The company below has NOT held any concall in the last 8 quarters.
+Your job is to compile the best available public information about the company from investor presentations, order wins, and press releases.
+
+OUTPUT FORMAT — return ONLY a single valid JSON object (no markdown fences, no text outside JSON):
+
+{
+  "type": "no_concall_updates",
+  "sectionTitle": "Company Updates",
+  "noConcallMessage": "No concalls held in last 8 quarters",
+  "investorPresentation": {
+    "period": "most recent PPT period, e.g. Q3 FY26",
+    "link": "direct URL to the PPT — use one from INVESTOR PRESENTATIONS above",
+    "bullets": [
+      "Revenue guidance / growth trajectory mentioned in PPT",
+      "Key business highlights from latest PPT",
+      "Capacity / expansion plans if any"
+    ]
+  },
+  "orderBook": {
+    "bullets": [
+      "Bagged ₹450 Cr order from [NTPC](https://ntpc.co.in) — [NSE Filing](LINK)",
+      "Received L1 status in ₹220 Cr PGCIL tender — [NSE Filing](LINK)"
+    ]
+  },
+  "pressReleases": {
+    "bullets": [
+      "Commissioned 50 MW solar plant in Madhya Pradesh — [NSE Filing](LINK)",
+      "Board approved ₹200 Cr capex for FY26 — [NSE Filing](LINK)"
+    ]
+  }
+}
+
+RULES:
+- investorPresentation: use the MOST RECENT PPT. Read it via web search to extract 3-5 meaningful bullets. If no PPT link available, use web search to find investor day / annual report highlights.
+- orderBook: list each significant order/contract as a bullet. Use markdown links: wrap the client name as [ClientName](url) if you know the URL, and append [NSE Filing](filing_link) as the source.
+- pressReleases: list key company announcements. Append [NSE Filing](filing_link) as source.
+- If a section has no data, set its bullets to [].
+- noConcallMessage: always exactly "No concalls held in last 8 quarters"
+- Do NOT include any field outside the schema above.""" + _reference_date_context() + _WEB_SEARCH_INSTRUCTION
+
+    user = (
+        f"Company: {company_name} | Symbol: {symbol} | Exchange: {exchange}\n\n"
+        f"{raw_data}\n\n"
+        "Use the above data plus web search to fill the JSON. "
+        "For the investor presentation bullets, read the PPT content via web search and extract real numbers (revenue, margins, order book size). "
+        "For order wins, include the client name, value, and NSE filing link. "
+        "Return ONLY the JSON."
+    )
+    return system, user
+
+
 def aggregate_prompt(
     company_overview: str,
     management_research: str,
