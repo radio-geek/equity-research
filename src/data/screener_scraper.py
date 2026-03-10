@@ -9,6 +9,7 @@ Ratios section has a separate table (ROCE % etc.).
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
 
@@ -17,6 +18,7 @@ import requests
 from bs4 import BeautifulSoup
 
 
+logger = logging.getLogger(__name__)
 BASE_URL = "https://www.screener.in/company"
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
 
@@ -110,11 +112,49 @@ def _find_tables_by_content(soup: BeautifulSoup) -> dict[str, Any]:
     return result
 
 
+# Quote block is in the first ~2500 chars; avoid matching ₹ from news/body (e.g. "₹0.07 Cr").
+_QUOTE_BLOCK_MAX_LEN = 3500
+
+
+def _page_has_quote_data(soup: BeautifulSoup) -> bool:
+    """Return True if page shows valid quote data (current price or market cap); False if NA/empty.
+
+    Only inspects the top-of-page quote block so we do not treat body text (e.g. news "₹0.07 Cr")
+    as valid quote data. Used to detect when consolidated page is empty so we fall back to
+    the standalone company page.
+    """
+    text = soup.get_text()
+    block = text[:_QUOTE_BLOCK_MAX_LEN]
+    # Current price: in quote block look for "Current Price" then ₹ and a number (min 0.5 to skip noise)
+    price_m = re.search(
+        r"Current Price\s*[₹]\s*([\d,]+(?:\.\d+)?)",
+        block,
+        re.IGNORECASE,
+    )
+    if price_m:
+        raw = price_m.group(1).replace(",", "").strip()
+        if raw.upper() not in ("NA", "N/A", ""):
+            try:
+                p = float(raw)
+                if p >= 0.5:  # ignore placeholder/tiny values
+                    return True
+            except ValueError:
+                pass
+    # Market cap: in quote block "Market Cap ₹ 19,26,475 Cr." (must have digits)
+    mc = re.search(r"Market Cap\s*[₹]\s*([\d,\s]+)(?:\s*Cr\.?)?", block, re.IGNORECASE)
+    if mc:
+        val = mc.group(1).strip().replace(",", "").replace(" ", "")
+        if val and val.upper() not in ("NA", "N/A", "") and any(c.isdigit() for c in val):
+            return True
+    return False
+
+
 def fetch_consolidated(symbol: str) -> dict[str, pd.DataFrame | None]:
     """Fetch consolidated page for symbol and return P&L, Balance Sheet, Cash Flow, Ratios as DataFrames.
 
-    P&L has columns like 'Mar 2021', ..., 'Mar 2025', 'TTM' (TTM is correct on the website).
-    BS has last column as latest half-year (Mar/Sep). CF has no TTM column.
+    If the consolidated page is empty (current price or market cap NA/not present), fetches
+    the standalone company page (https://www.screener.in/company/{symbol}/) instead.
+    P&L has columns like 'Mar 2021', ..., 'Mar 2025', 'TTM'. BS/CF same structure.
     """
     symbol = (symbol or "").strip().upper()
     if not symbol:
@@ -123,9 +163,19 @@ def fetch_consolidated(symbol: str) -> dict[str, pd.DataFrame | None]:
     try:
         resp = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=30)
         resp.raise_for_status()
-    except requests.RequestException as e:
+    except requests.RequestException:
         return {"profit_loss": None, "balance_sheet": None, "cash_flow": None, "ratios": None}
     soup = BeautifulSoup(resp.text, "lxml")
+    if not _page_has_quote_data(soup):
+        # Consolidated page empty (no consolidated statement); use standalone company page
+        company_url = screener_company_url(symbol)
+        try:
+            resp2 = requests.get(company_url, headers={"User-Agent": USER_AGENT}, timeout=30)
+            resp2.raise_for_status()
+            soup = BeautifulSoup(resp2.text, "lxml")
+            logger.info("Screener: consolidated empty for %s, using company page %s", symbol, company_url)
+        except requests.RequestException:
+            pass  # keep original consolidated soup and parse what we have
     located = _find_tables_by_content(soup)
     out = {}
     for key in ["profit_loss", "balance_sheet", "cash_flow", "ratios"]:

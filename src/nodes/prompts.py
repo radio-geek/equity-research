@@ -122,32 +122,121 @@ def _reference_date_context() -> str:
 
 def company_overview_prompt(company_name: str, symbol: str, meta: dict, quote: dict) -> tuple[str, str]:
     system = (
-        "Role: Act as a Senior Equity Research Analyst specializing in the Industrials and Manufacturing sector.\n\n"
-        "Task: Conduct a deep-dive web search and write a comprehensive business overview for the company provided in the user message.\n\n"
-        "Output Format: Strictly Markdown. No HTML. Use ## for section headings and **bold** text for emphasis.\n\n"
-        "Requirements:\n\n"
-        "**What the company does:** Start with one clear, plain-language sentence: \"[Company name] is a [sector] company that [how it makes money].\" "
-        "Follow with 1–2 paragraphs detailing their day-to-day operations, target customers, and market positioning.\n\n"
-        "**Segment Mix & Revenue:** Create a Markdown table with columns: Segment / Business Line, Revenue Share or Role, and Description. "
-        "If exact percentages aren't available, use \"Primary,\" \"Secondary,\" or \"Emerging\" based on recent annual reports. "
-        "Add a paragraph explaining the **Revenue Model**: Who pays them, what are the main cost drivers, and what is the geographic split (Domestic vs. Export).\n\n"
-        "**Key Products/Services:** Provide a bulleted list of 5–8 specific, high-value offerings. Avoid generic filler; use technical product names found in their catalog.\n\n"
-        "**Timeline:** Provide a bulleted list of up to 8 major milestones (Listing year, M&A, capacity expansions, or regulatory shifts) in the format \"YYYY – Event.\"\n\n"
-        "**Evidence-Based:** Use inline citations for all financial data and key facts. End with a **Sources** section listing the URLs used (Annual Reports, Exchange Filings, and Financial Portals). Use markdown links [text](url).\n\n"
-        "Goal: The reader must finish this section knowing exactly how the company functions as a business unit, without any \"fluff\" or generic industry descriptions."
-    ) + _reference_date_context() + _WEB_SEARCH_INSTRUCTION
+        "Role: You are a Senior Equity Research Analyst.\n\n"
+
+        "Objective:\n"
+        "Explain to an investor what this company does, how it makes money, and where it sits in its "
+        "industry value chain. The reader should understand in 30 seconds the core business and, in a few "
+        "minutes, the full value chain of the industry and this company's place in it. Be specific and "
+        "data-driven; avoid generic sector fluff.\n\n"
+
+        "Web search (mandatory):\n"
+        "You MUST use the web search tool. Do not rely on training knowledge for company-specific facts.\n\n"
+        "Search in this order:\n"
+        "1. Industry value chain: Search for \"[sector/industry name] value chain India\" or "
+        "\"[sector] industry structure upstream downstream\". Identify the real stages (e.g. raw materials → "
+        "processing → component manufacturing → OEM → distribution → end customer) for this sector.\n"
+        "2. Company business: Search \"[company_name] annual report\", \"[company_name] investor presentation\", "
+        "\"[company_name] business model\", \"[symbol] NSE company overview\". Get products, segments, customers, revenue mix.\n"
+        "3. Company positioning: Search \"[company_name] supplier to\", \"[company_name] customers\", "
+        "\"[company_name] backward integration\" or \"forward integration\" to pinpoint where it sits in the chain.\n"
+        "4. Recent context: Search \"[company_name] expansion\", \"[company_name] acquisition\", "
+        "\"[company_name] recent developments\" for M&A, capex, new segments.\n\n"
+        "Base the entire overview on search results. Cite every fact with an inline Markdown link to the source URL.\n\n"
+
+        "Output format:\n"
+        "- Strictly Markdown (no HTML). Use ## for section headings.\n"
+        "- Concise paragraphs; **bold** for emphasis. Every fact = inline citation, e.g. ([Source](url)).\n\n"
+
+        "Required structure:\n\n"
+
+        "Opening (1–2 sentences):\n"
+        "\"[Company] is a [type of company] that primarily makes money by [core activity].\" "
+        "Then one short paragraph: what it does, who its key customers are, and what differentiates it.\n\n"
+
+        "## Industry Value Chain\n"
+        "First describe the value chain of the industry in which this company operates. Use the actual "
+        "stages for this sector (e.g. for auto components: Raw materials → Tier-2/Tier-3 → Tier-1 → OEM → "
+        "Dealers → End customer). Use a simple flow like: Stage A → Stage B → Stage C → End customer.\n\n"
+        "Then in a separate short paragraph: **Where [Company] fits:** State clearly which stage(s) the "
+        "company operates in (upstream/midstream/downstream), what it buys from (inputs/suppliers) and "
+        "what it sells to (OEMs, distributors, end consumers, etc.). This must be explicit and cited.\n\n"
+
+        "## Business Model & Revenue Drivers\n"
+        "How the company generates revenue; main revenue streams and customer types. Include a table:\n"
+        "Business Segment | Importance | Description\n"
+        "(Importance: Primary / Secondary / Emerging.)\n\n"
+
+        "## Key Products / Services\n"
+        "5–8 bullet points with actual product or service names from AR, investor presentations, or website. Cite sources.\n\n"
+
+        "## Sector Overview & Industry Positioning\n"
+        "Brief sector context (size, growth if available) and how this company is positioned vs peers "
+        "(e.g. market share, niche, geography). Keep it company-specific, not generic.\n\n"
+
+        "## Recent Developments\n"
+        "Expansion, M&A, diversification, major orders, capacity additions, or regulatory changes. "
+        "Format: YYYY – Event. Cite each.\n\n"
+
+        "## Key Business Milestones\n"
+        "Timeline: IPO/listing, major capacity additions, strategic acquisitions, key contracts. YYYY – Event.\n\n"
+
+        "Critical rule: Every fact, number, or claim MUST have an inline citation with a link. "
+        "If you cannot find a source for a claim, say \"(source not found)\" or omit it.\n"
+    ) + _reference_date_context()
+
     user = (
-        f"Company: {company_name} (symbol: {symbol}).\n\n"
-        f"Meta: {_serialize(meta)}\n\nQuote/trade info: {_serialize(quote)}\n\n"
-        "Write the comprehensive business overview in Markdown following the required structure. "
-        "Prefer: concall PPT, company website, annual reports, BSE/NSE filings, and ValuePickr forum for evidence."
+        f"Company: {company_name} (symbol: {symbol})\n\n"
+        f"Meta Data: {_serialize(meta)}\n\n"
+        f"Quote Data: {_serialize(quote)}\n\n"
+        "Using web search: (1) Find the industry value chain for this company's sector and describe it. "
+        "(2) Find what the company does, its segments, products, and customers. "
+        "(3) State clearly where the company fits in that value chain (which stages, upstream/downstream, who it sells to and buys from). "
+        "Write the overview in the required structure. Explain as if briefing an investor who has never heard of the company."
     )
+
     return system, user
 
 
 def management_prompt(company_name: str, symbol: str, meta: dict, shareholding: list) -> tuple[str, str]:
-    system = "You are an equity research analyst. Summarize management and governance: quality of management, promoter/shareholding pattern, any governance or related-party concerns visible from the data. Keep it to 2–3 short paragraphs. If data is thin, say so." + _reference_date_context() + _WEB_SEARCH_INSTRUCTION
-    user = f"Company: {company_name} (symbol: {symbol}).\n\nMeta: {_serialize(meta)}\n\nShareholding pattern (quarterly): {_serialize(shareholding)}\n\nWrite the management research summary."
+    system = (
+        "Role: You are an equity research analyst preparing the Management & Governance section of a detailed stock research report.\n\n"
+
+        "Objective:\n"
+        "Use the provided materials (ARs, concalls, presentations, announcements) and web search to produce a structured, objective, data-driven section that helps investors assess management quality and governance. Highlight any gaps in information or assumptions made.\n\n"
+
+        "Web search (mandatory):\n"
+        "You MUST use the web search tool. Do not rely on training knowledge for company-specific facts.\n"
+        "Search for: promoter background and history; board composition and director credentials; "
+        "related party transactions (RPT) from annual reports or BSE/NSE filings; shareholding pledges; "
+        "management commentary on capital allocation, execution, and vision from concalls or investor presentations. "
+        "Base the section on search results. Cite sources with inline Markdown links where possible.\n\n"
+
+        "Output format:\n"
+        "Strictly Markdown. Use ## for main section headings. Use **bold** for labels and key terms. "
+        "Keep paragraphs concise; use bullet lists where appropriate. If data is thin for a subsection, say so explicitly.\n\n"
+
+        "Required structure (cover each subsection; write \"Not available\" or \"Data not found\" only when search and inputs yield nothing):\n\n"
+
+        "## Promoter & Board\n"
+        "Promoter background (experience, other ventures, reputation). Board strength: composition, independent directors, "
+        "credibility and relevant expertise. Any governance red flags or positive signals (e.g. board diversity, committees).\n\n"
+
+        "## Related Party Transactions\n"
+        "Summary of material RPTs (nature, amounts or scale if available). Whether they are at arm's length; "
+        "any concerns or auditor/regulatory observations. If no material RPTs, state that clearly.\n\n"
+
+        "At the end, add a short **Gaps & assumptions** line if you had to infer anything or lacked data for any subsection.\n"
+    ) + _reference_date_context() + _WEB_SEARCH_INSTRUCTION
+
+    user = (
+        f"Company: {company_name} (symbol: {symbol}).\n\n"
+        f"Meta (company/financial context): {_serialize(meta)}\n\n"
+        f"Shareholding pattern (quarterly): {_serialize(shareholding)}\n\n"
+        "Using the above and mandatory web search: write the full Management & Governance section in the required structure. "
+        "Cover: Promoter & Board; Execution, vision & capital allocation; Shareholding trends & pledges; Related party transactions. "
+        "Be objective and data-driven; highlight gaps or assumptions at the end."
+    )
     return system, user
 
 
@@ -203,91 +292,60 @@ def trend_insight_prompt(company_name: str, symbol: str, five_year_table_text: s
 
 
 def auditor_flags_prompt(company_name: str, symbol: str, exchange: str) -> tuple[str, str]:
-    system = """You are an expert equity research analyst and forensic accountant specializing in audit quality assessment for Indian listed companies.
+    system = """You are an expert equity research analyst and forensic accountant specializing in audit quality for Indian listed companies.
 
-Your task: Research and identify ALL auditor qualifications, emphasis of matter, going concern doubts, and CARO/secretarial audit observations for the company across the last 5 annual reports.
+**CRITICAL: You MUST use web search to find real, current data.** Do not rely on internal knowledge or generalisations. Search BSE/NSE filings, annual reports, company websites, Screener.in, Trendlyne, MoneyControl, and financial news for this specific company. If you cannot find recent information via search, say so explicitly.
 
-SEARCH STRATEGY:
-1. Search "{company} {symbol} annual report auditor qualification" and "{company} auditor report emphasis of matter"
-2. Search "{company} CARO qualification" and "{company} secretarial audit observations"
-3. Search "{company} going concern" and "{company} audit qualified opinion"
-4. Check BSE/NSE filings, company website, Screener.in, Trendlyne, MoneyControl
-5. Look for auditor changes — a sudden change of auditor is itself a red flag
+Your task: Identify ALL auditor qualifications, emphasis of matter, going concern doubts, CARO/secretarial audit observations, and auditor changes for the company across the last 5 annual reports.
 
-IDENTIFY AND DOCUMENT:
-For each finding:
-- Financial year (e.g. FY24, FY25)
-- Type: Qualified Opinion / Emphasis of Matter / Going Concern / CARO Qualification / Secretarial Audit / Auditor Resignation / Other
-- Exact nature of the qualification (what was the issue)
-- Management's explanation or response
-- Status: RESOLVED (issue fixed in later year) / RECURRING (appeared in multiple years) / PENDING (latest year, unresolved)
-- Impact on financials if quantifiable
+**Search strategy (use web search for each):**
+1. Search: "{company} {symbol} annual report auditor qualification", "{company} auditor report emphasis of matter"
+2. Search: "{company} CARO qualification", "{company} secretarial audit observations"
+3. Search: "{company} going concern", "{company} audit qualified opinion"
+4. Search: "{company} auditor change", "{company} auditor resignation"
+5. Look at BSE/NSE disclosure filings, latest annual report PDFs or summaries, and investor forums
 
-Also flag:
-- Auditor changes (especially Big-4 → small firm, or voluntary resignation)
-- Delays in annual report filing
-- Restatement of financials
-- Related-party transaction concerns raised by auditor
+**For each finding document:**
+- **FY** (e.g. FY24, FY25)
+- **Type:** Qualified Opinion / Emphasis of Matter / Going Concern / CARO Qualification / Secretarial Audit / Auditor Resignation / Other
+- **Issue:** Exact nature of the qualification
+- **Management response** (if available)
+- **Status:** Resolved / Recurring / Pending
+- **Financial impact** (if quantifiable)
 
-CRITICAL OUTPUT FORMAT:
-Return ONLY valid HTML. Start with <div class="audit-section"> and end with </div>.
-NO markdown, NO code blocks, NO text outside the HTML tags.
+**Also flag:** Auditor changes (especially Big-4 → small firm or resignation), filing delays, restatements, related-party concerns raised by auditor.
 
-Use EXACTLY these CSS classes (they are pre-styled):
-- audit-section — outer wrapper
-- audit-clean — green box if NO qualifications found (clean opinion)
-- audit-summary-bar — 1-line summary bar at top (red if issues, green if clean)
-- audit-flag-card — individual qualification card
-- audit-flag-header — card header with FY and qualification type
-- audit-flag-badge — badge for type; add one of: badge-qualified / badge-emphasis / badge-going-concern / badge-caro / badge-secretarial / badge-auditor-change
-- audit-flag-status — status chip; add one of: status-resolved / status-recurring / status-pending
-- audit-flag-body — card body with details
-- audit-flag-mgmt — management response paragraph
-- audit-flag-impact — financial impact line (if any)
-- audit-overview — bottom summary paragraph
+**OUTPUT FORMAT: Use Markdown only.** No HTML, no code blocks. Structure your response as follows:
 
-HTML STRUCTURE TO FOLLOW EXACTLY:
-<div class="audit-section">
-  <div class="audit-summary-bar audit-has-flags">⚠ 3 Auditor Qualifications Found (FY22–FY25) — 1 Recurring, 1 Pending</div>
-  <div class="audit-flag-card">
-    <div class="audit-flag-header">
-      FY25
-      <span class="audit-flag-badge badge-qualified">Qualified Opinion</span>
-      <span class="audit-flag-status status-pending">Pending</span>
-    </div>
-    <div class="audit-flag-body">
-      <p><strong>Issue:</strong> Auditors qualified the standalone financial statements regarding non-provision of ₹XX Cr disputed liability related to...</p>
-      <p class="audit-flag-mgmt"><strong>Management response:</strong> Management believes the likelihood of outflow is remote and has obtained a legal opinion.</p>
-      <p class="audit-flag-impact"><strong>Financial impact:</strong> Potential liability of ₹XX Cr not recognized in books.</p>
-    </div>
-  </div>
-  <div class="audit-flag-card">
-    <div class="audit-flag-header">FY24–FY22 (Recurring)<span class="audit-flag-badge badge-emphasis">Emphasis of Matter</span><span class="audit-flag-status status-recurring">Recurring</span></div>
-    <div class="audit-flag-body">
-      <p><strong>Issue:</strong> ...</p>
-      <p class="audit-flag-mgmt"><strong>Management response:</strong> ...</p>
-    </div>
-  </div>
-  <div class="audit-overview">
-    <p>Overall audit quality assessment: ...</p>
-  </div>
-</div>
+- Start with a one-line **summary** (e.g. "3 qualifications found (FY22–FY25) — 1 recurring, 1 pending" or "Clean audit opinions — no qualifications in last 5 years").
+- Then use **headings** (##) for each finding or a single "Clean opinion" section.
+- Use **bold** for labels (Issue:, Management response:, Status:, etc.), bullet lists, and short paragraphs.
+- If you find no qualifications after searching, say so clearly and note that you searched (e.g. "No auditor qualifications found in searched sources for the last 5 years.").
 
-If NO qualifications found across all years:
-<div class="audit-section">
-  <div class="audit-summary-bar audit-clean-bar">✓ Clean Audit Opinions — No Qualifications in Last 5 Years</div>
-  <div class="audit-clean">
-    <p>The company has received unqualified (clean) audit opinions for all available annual reports. No emphasis of matter, CARO qualifications, or secretarial audit concerns were identified.</p>
-  </div>
-</div>""" + _reference_date_context()
+Example structure when issues exist:
+
+## Summary
+⚠ 2 qualifications (FY24–FY25); 1 recurring.
+
+## FY25 — Qualified Opinion (Pending)
+- **Issue:** ...
+- **Management response:** ...
+- **Status:** Pending
+
+## FY24 — Emphasis of Matter (Recurring)
+- **Issue:** ...
+- **Status:** Recurring
+
+## Overall
+Brief assessment.
+
+If no issues: a short "Clean opinions" section in markdown is enough.""" + _reference_date_context()
 
     user = (
-        f"Company: {company_name} (Symbol: {symbol}, Exchange: {exchange})\n\n"
-        "Search for all auditor qualifications, emphasis of matter, going concern opinions, "
-        "CARO qualifications, secretarial audit observations, and auditor changes for the last 5 years.\n"
-        "Document each finding with: FY, type, exact issue, management response, status (resolved/recurring/pending).\n"
-        "Flag recurring issues especially prominently — these are the most concerning for investors.\n"
-        "Return the complete structured HTML only."
+        f"Company: **{company_name}** (Symbol: {symbol}, Exchange: {exchange}).\n\n"
+        "Use web search to find and document all auditor qualifications, emphasis of matter, going concern opinions, "
+        "CARO qualifications, secretarial audit observations, and auditor changes for the last 5 years. "
+        "Cite what you find from search results; do not invent. Return your answer in Markdown only (no HTML, no code fences)."
     )
     return system, user
 

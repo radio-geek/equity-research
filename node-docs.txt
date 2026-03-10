@@ -195,9 +195,9 @@ KNOWN LIMITATIONS / FUTURE IMPROVEMENTS
 NODE: auditor_flags
 File: src/nodes/auditor_flags.py
 Prompt: src/nodes/prompts.py → auditor_flags_prompt()
-CSS: src/report/styles.css (audit section appended after no-concall-reason)
 Report: src/report/templates/base.html (section: "⚠ Auditor Flags & Qualifications")
-         Placed after Financial Risk / Key Ratios, before Concall Evaluation.
+         backend/pdf_render.py converts markdown → HTML for template/PDF.
+         frontend ReportA.tsx renders auditor_flags with ReactMarkdown.
          Section is conditional — only shown if auditor_flags state field is non-empty.
 ================================================================================
 
@@ -210,90 +210,32 @@ Uses the OpenAI Responses API (with web_search_preview) to search for and docume
 4. CARO (Companies Auditor's Report Order) qualifications
 5. Secretarial audit observations
 6. Auditor resignations / changes (red flag)
-Returns structured HTML embedded directly in the report.
+Returns Markdown (no HTML). Backend converts to HTML for report/PDF; frontend renders markdown.
 
 GRAPH WIRING
 -------------
 - Added to _fan_out_research() alongside other parallel research nodes
-- Runs in parallel with company_overview, management, financial_risk, concall_evaluator, sectoral
-- graph.add_edge("auditor_flags", "aggregate") — feeds into the aggregate step
+- graph.add_edge("auditor_flags", "aggregate")
 - state field: auditor_flags: NotRequired[str]
 
 SYSTEM PROMPT DESIGN (auditor_flags_prompt)
 --------------------------------------------
-Search strategy:
-  - "{company} {symbol} annual report auditor qualification"
-  - "{company} auditor report emphasis of matter"
-  - "{company} CARO qualification"
-  - "{company} secretarial audit observations"
-  - "{company} going concern"
-  - Checks BSE/NSE filings, Screener.in, Trendlyne, MoneyControl
+- **Web search required:** Prompt instructs the model to MUST use web search; do not rely on
+  internal knowledge. Search BSE/NSE filings, annual reports, Screener, Trendlyne, MoneyControl.
+- Search strategy: company+symbol auditor qualification, emphasis of matter, CARO, secretarial
+  audit, going concern, auditor change/resignation.
+- Per finding: FY, type (Qualified/Emphasis/Going Concern/CARO/Secretarial/Auditor Change),
+  issue, management response, status (Resolved/Recurring/Pending), financial impact.
+- Also flag: auditor changes, filing delays, restatements, related-party concerns.
 
-Per finding documented:
-  - Financial year (FY24, FY25 etc.)
-  - Type: Qualified / Emphasis / Going Concern / CARO / Secretarial / Auditor Change
-  - Exact nature of the qualification
-  - Management's response
-  - Status: RESOLVED / RECURRING / PENDING
-  - Financial impact if quantifiable
-
-Also flags:
-  - Auditor changes (Big-4 → small firm, resignation)
-  - Delayed annual report filing
-  - Restatement of financials
-  - Related-party concerns raised by auditor
-
-Output format: HTML with exact CSS classes (same approach as concall_evaluator)
-
-HTML SECTIONS PRODUCED
------------------------
-1. .audit-summary-bar         — 1-line red/green bar at top
-   └── .audit-has-flags       → red (#b71c1c) if issues found
-   └── .audit-clean-bar       → green (#2e7d32) if clean
-2. .audit-flag-card           — one card per qualification finding
-   ├── .audit-flag-header     — FY, badge, status chip
-   ├── .audit-flag-badge + badge-* class  — type indicator
-   │     badge-qualified / badge-emphasis / badge-going-concern /
-   │     badge-caro / badge-secretarial / badge-auditor-change
-   ├── .audit-flag-status + status-* class
-   │     status-resolved (#c8e6c9 green) / status-recurring (red) / status-pending (orange)
-   └── .audit-flag-body
-         .audit-flag-mgmt    — management response (italic, dark grey)
-         .audit-flag-impact  — financial impact (bold red)
-3. .audit-clean               — green box shown when no qualifications found
-4. .audit-overview            — bottom summary paragraph
-
-CSS CLASS SUMMARY
-------------------
-.audit-has-flags       → red summary bar
-.audit-clean-bar       → green summary bar
-.badge-qualified       → dark red (#b71c1c)
-.badge-emphasis        → deep orange (#e65100)
-.badge-going-concern   → purple (#4a148c)
-.badge-caro            → blue (#1565c0)
-.badge-secretarial     → teal (#004d40)
-.badge-auditor-change  → pink (#880e4f)
-.status-resolved       → green chip
-.status-recurring      → red chip (most alarming)
-.status-pending        → orange chip
-
-TESTED ON
-----------
-- KERNEX (NSE) — 2026-03-04
-  Result: 3 qualifications found across FY24-FY25
-  - FY25 Qualified Opinion (PENDING): ₹12.76 Cr impairment on US subsidiary AGI not recognized;
-    profit overstated by ₹12.76 Cr
-  - FY25 Emphasis of Matter (PENDING): trade receivables >3yr old, bank guarantees under
-    arbitration, ₹3.92 Cr provision for JV investment
-  - FY24 Qualified Opinion (RESOLVED): same AGI impairment issue — marked resolved since
-    management response addressed it in FY24
+Output format: Markdown only (no HTML, no code fences). Summary line, ## headings per finding
+or "Clean opinion", **bold** labels, bullets. If no qualifications found after search, say so.
 
 KNOWN LIMITATIONS / FUTURE IMPROVEMENTS
 -----------------------------------------
-- Relies on LLM web search; older annual reports (pre-FY22) may not be indexed
-- CARO qualifications may be harder to find online vs. reading the actual PDF
-- Auditor resignation details may be partial if not well covered by financial press
-- Consider adding a direct BSE filings scraper for annual report PDFs in a future version
+- Relies on LLM web search; older annual reports may not be indexed
+- CARO/secretarial details may be partial without actual PDF access
+- Consider BSE filings scraper for annual report PDFs in future
 ================================================================================
 
 ================================================================================
@@ -308,10 +250,12 @@ Frontend: frontend/src/reports/ReportA.tsx — renders via react-markdown + rema
 
 WHAT THIS NODE DOES
 --------------------
-Generates a focused, detailed company overview in Markdown. Reads company_name,
+Generates an investor-focused company overview in Markdown: what the company does,
+how it makes money, and where it fits in the industry value chain. Reads company_name,
 symbol, meta, quote from ResearchState; writes company_overview (string) to state.
-Uses Tavily search for web search (invoke_llm with use_tavily_only=True when
-TAVILY_API_KEY is set); otherwise LLM without search.
+Uses invoke_llm(use_web_search=True, use_tavily_only=False) → OpenAI Responses API
+with built-in web_search_preview first; Tavily fallback if TAVILY_API_KEY set and
+OpenAI search unavailable.
 
 DATA FLOW
 ----------
@@ -320,23 +264,29 @@ Output to state: company_overview (Markdown string)
 
 PROMPT DESIGN (company_overview_prompt)
 ----------------------------------------
-Role: Senior Equity Research Analyst specializing in the Industrials and Manufacturing sector.
-Task: Deep-dive web search and comprehensive business overview for the company.
-Reference date: Today's date is passed so "latest"/"current"/"recent" are unambiguous.
+Role: Senior Equity Research Analyst. Goal: explain to an investor what the company
+does and where it sits in the industry value chain; reader gets core business in
+~30 seconds and full value-chain context in a few minutes.
 
-Source priority: Concall PPT, company website, annual reports, BSE/NSE filings, ValuePickr forum.
-Evidence-based: inline citations for financial data and key facts; end with Sources section (URLs).
+Web search (mandatory): Model must use web search; no reliance on training data
+for company-specific facts. Ordered search strategy:
+1. Industry value chain — e.g. "[sector] value chain India", "[sector] industry structure upstream downstream"
+2. Company business — annual report, investor presentation, business model, NSE overview
+3. Company positioning — "supplier to", "customers", backward/forward integration
+4. Recent context — expansion, acquisition, recent developments
+All facts must be cited with inline Markdown links.
 
-Goal: Reader finishes knowing exactly how the company functions as a business unit — no fluff or generic industry descriptions.
+Required structure (## headings):
+- Opening: One-sentence pitch + short para (what it does, key customers, differentiation).
+- Industry Value Chain: (1) Describe the sector value chain (Stage A → Stage B → … → End customer).
+  (2) Where [Company] fits: which stage(s), upstream/midstream/downstream, what it buys from and sells to.
+- Business Model & Revenue Drivers: revenue streams, customer types; table Segment | Importance | Description.
+- Key Products / Services: 5–8 bullets, actual names from AR/presentations, cited.
+- Sector Overview & Industry Positioning: sector context, company positioning vs peers.
+- Recent Developments: expansion, M&A, diversification, major orders; YYYY – Event.
+- Key Business Milestones: IPO, capacity, acquisitions, contracts; YYYY – Event.
 
-Required structure (## headings, in order):
-1. What the company does — Opening sentence: "[Company name] is a [sector] company that [how it makes money]." Then 1–2 paragraphs: day-to-day operations, target customers, market positioning.
-2. Segment Mix & Revenue — Markdown table: Segment/Business Line | Revenue Share or Role | Description. Use "Primary"/"Secondary"/"Emerging" if exact % not available. Then a paragraph on Revenue Model: who pays, main cost drivers, geographic split (Domestic vs. Export).
-3. Key Products/Services — Bulleted list of 5–8 specific, high-value offerings; technical product names from catalog; no generic filler.
-4. Timeline — Bulleted list of up to 8 major milestones in format "YYYY – Event" (listing, M&A, capacity expansions, regulatory shifts).
-5. Sources — Inline citations throughout; end with Sources subsection listing URLs (Annual Reports, Exchange Filings, Financial Portals); markdown links [text](url).
-
-Output: Strictly Markdown (no HTML). ## for headings, **bold** for emphasis. Factual and neutral.
+Output: Strictly Markdown (no HTML). Every fact = inline citation; omit or note if no source.
 
 DOWNSTREAM
 ----------
@@ -353,12 +303,73 @@ Markdown: headings (##), tables, lists, bold, links. No HTML.
 TESTED ON
 ----------
 (To be filled after first run with new prompt: symbol, date, note that overview
-contains sections/tables/citations.)
+includes value chain and company position.)
 
 KNOWN LIMITATIONS / FUTURE IMPROVEMENTS
 -----------------------------------------
-- Relies on LLM web search; segment/geography data may vary by company disclosure
+- Relies on LLM web search; value-chain and segment data may vary by source quality
 - Structured JSON output variant could be added later for strict schema
+================================================================================
+
+================================================================================
+NODE: management (Management & Governance)
+File: src/nodes/management.py
+Prompt: src/nodes/prompts.py → management_prompt()
+Report: src/report/templates/base.html (section: "Management & Governance")
+        backend/pdf_render.py converts markdown → HTML for template/PDF
+        frontend ReportA.tsx renders management_research with ReactMarkdown
+================================================================================
+
+WHAT THIS NODE DOES
+--------------------
+Generates the Management & Governance section of the stock research report. Aligns with
+parent report spec: promoter & board, execution/vision/capital allocation, shareholding
+trends & pledges, related party transactions. Uses meta and shareholding from state;
+invokes LLM with web search to enrich from ARs, concalls, presentations, filings.
+
+DATA FLOW
+----------
+Inputs from state: company_name, symbol, meta, shareholding
+Output to state: management_research (Markdown string)
+
+PROMPT DESIGN (management_prompt)
+----------------------------------
+Role: Equity research analyst for Management & Governance section. Objective: structured,
+objective, data-driven section; highlight gaps or assumptions.
+
+Web search (mandatory): Model MUST use web search; do not rely on training knowledge.
+Search: promoter background, board composition/director credentials, RPT from AR/filings,
+shareholding pledges, management commentary on capital allocation/execution/vision.
+Base the section on search results. Cite with inline Markdown links.
+
+Required structure (## headings):
+- **Promoter & Board**: Promoter background, board strength/composition, independent
+  directors, credibility, governance red or green flags.
+- **Execution, Vision & Capital Allocation**: Track record (projects, capacity, M&A),
+  stated vision/strategy, capital allocation (dividends, debt, capex, buybacks),
+  management commentary on past performance.
+- **Shareholding Trends & Pledges**: Summary from provided quarterly shareholding data
+  (promoter/DII/FII/retail); promoter or other pledging, trend in pledge levels; or "no pledges".
+- **Related Party Transactions**: Material RPTs (nature, scale), arm's length or concerns,
+  auditor/regulatory observations; or "no material RPTs".
+End with **Gaps & assumptions** if any subsection relied on inference or lacked data.
+
+Output: Strictly Markdown (##, **bold**, bullets). If data thin, say so per subsection.
+
+DOWNSTREAM
+----------
+- Report generator passes management_research to payload; backend _markdown_to_html for
+  Jinja template and PDF (tables extension); frontend ReactMarkdown + remarkGfm in
+  .report-markdown for headings, lists, links, tables.
+
+TESTED ON
+----------
+(To be filled after run: symbol, date, note that all four subsections and gaps line appear.)
+
+KNOWN LIMITATIONS / FUTURE IMPROVEMENTS
+-----------------------------------------
+- RPT and pledge data depend on web search and provided shareholding; BSE/NSE filing
+  scrapers could improve accuracy in future
 ================================================================================
 
 ================================================================================
