@@ -12,9 +12,9 @@ import re
 from typing import Any
 
 from src.state import ResearchState
-from src.data.concall import get_transcripts_from_db
+from src.data.concall import get_transcripts_from_db, fetch_company_updates_data
 
-from .prompts import concall_structured_prompt, invoke_llm
+from .prompts import concall_structured_prompt, company_updates_prompt, invoke_llm
 
 logger = logging.getLogger(__name__)
 
@@ -36,11 +36,14 @@ def _validate_concall_shape(data: dict) -> bool:
     if not isinstance(data, dict):
         return False
     t = data.get("type")
-    if t not in ("mainboard_concall", "sme_updates"):
+    if t not in ("mainboard_concall", "sme_updates", "no_concall_updates"):
         return False
     if not data.get("sectionTitle"):
-        data["sectionTitle"] = "Concall Evaluation" if t == "mainboard_concall" else "Company Updates"
-    if "cards" not in data:
+        data["sectionTitle"] = (
+            "Concall Evaluation" if t == "mainboard_concall"
+            else "Company Updates"
+        )
+    if t in ("mainboard_concall", "sme_updates") and "cards" not in data:
         data["cards"] = []
     return True
 
@@ -55,7 +58,6 @@ def concall_evaluator(state: ResearchState) -> dict[str, Any]:
 
     # Step 1: Load transcripts from DB cache (populated by refresh_transcript_cache before pipeline)
     transcripts = []
-    use_web_search = False
     try:
         transcripts = get_transcripts_from_db(symbol, exchange)
         if transcripts:
@@ -64,25 +66,34 @@ def concall_evaluator(state: ResearchState) -> dict[str, Any]:
                 len(transcripts), transcripts[0].get("segment", "?"),
             )
         else:
-            logger.warning(
-                "concall_evaluator: no DB transcripts for %s — falling back to web search", symbol
-            )
-            use_web_search = True
+            logger.warning("concall_evaluator: no DB transcripts for %s — will use web search only", symbol)
     except Exception as e:
-        logger.warning("concall_evaluator: DB read failed (%s) — falling back to web search", e)
-        use_web_search = True
+        logger.warning("concall_evaluator: DB read failed (%s) — will use web search only", e)
 
-    # Step 2: Build prompt — with real transcripts (no web search) or web search fallback
-    system, user = concall_structured_prompt(
-        company_name, symbol, exchange,
-        transcripts=transcripts if not use_web_search else None,
-    )
+    # Step 2: Build prompt
+    # — If transcripts available: use standard concall prompt (hybrid: PDF text + web search)
+    # — If no transcripts: company had no concalls → fetch order wins/PPTs and use company_updates_prompt
+    if transcripts:
+        system, user = concall_structured_prompt(
+            company_name, symbol, exchange,
+            transcripts=transcripts,
+        )
+        logger.info(
+            "concall_evaluator: invoking concall_structured_prompt (web_search=always, transcripts=%d)",
+            len(transcripts),
+        )
+    else:
+        logger.info("concall_evaluator: no transcripts — fetching company updates for %s", symbol)
+        updates_data = fetch_company_updates_data(symbol)
+        system, user = company_updates_prompt(company_name, symbol, exchange, updates_data)
+        logger.info(
+            "concall_evaluator: invoking company_updates_prompt (ppt=%d orders=%d press=%d)",
+            len(updates_data.get("ppt_links") or []),
+            len(updates_data.get("order_items") or []),
+            len(updates_data.get("press_items") or []),
+        )
 
-    logger.info(
-        "concall_evaluator: invoking LLM (use_web_search=%s, transcripts=%d)",
-        use_web_search, len(transcripts),
-    )
-    raw = invoke_llm(system, user, use_web_search=use_web_search)
+    raw = invoke_llm(system, user, use_web_search=True)
     logger.debug("concall_evaluator: raw LLM output length=%d chars", len(raw or ""))
 
     # Step 3: Parse and validate JSON output
@@ -94,21 +105,31 @@ def concall_evaluator(state: ResearchState) -> dict[str, Any]:
             data = json.loads(stripped)
             if _validate_concall_shape(data):
                 concall_structured = data
-                parts = [data.get("summary") or ""]
-                if data.get("type") == "sme_updates" and data.get("summaryBar", {}).get("text"):
-                    parts.append(data["summaryBar"]["text"])
-                for card in (data.get("cards") or [])[:3]:
-                    period = card.get("period", "")
-                    bullets = card.get("bullets", [])
-                    if period and bullets:
-                        parts.append(f"{period}: {' '.join(bullets[:2])}")
-                concall_evaluation = "\n\n".join(p for p in parts if p).strip() or "Concall/company updates analyzed."
-                logger.info(
-                    "concall_evaluator: done, type=%s, cards=%d, source=%s",
-                    data.get("type"),
-                    len(data.get("cards", [])),
-                    "nse_transcripts" if not use_web_search else "web_search",
-                )
+                t = data.get("type")
+                if t == "no_concall_updates":
+                    # Build plain-text fallback from noConcallMessage + order/press bullets
+                    parts = [data.get("noConcallMessage") or "No concalls held in last 8 quarters"]
+                    for section_key in ("orderBook", "pressReleases"):
+                        for bullet in (data.get(section_key, {}).get("bullets") or [])[:2]:
+                            parts.append(bullet)
+                    concall_evaluation = "\n\n".join(p for p in parts if p).strip()
+                    logger.info("concall_evaluator: done, type=no_concall_updates")
+                else:
+                    parts = [data.get("summary") or ""]
+                    if t == "sme_updates" and data.get("summaryBar", {}).get("text"):
+                        parts.append(data["summaryBar"]["text"])
+                    for card in (data.get("cards") or [])[:3]:
+                        period = card.get("period", "")
+                        bullets = card.get("bullets", [])
+                        if period and bullets:
+                            parts.append(f"{period}: {' '.join(bullets[:2])}")
+                    concall_evaluation = "\n\n".join(p for p in parts if p).strip() or "Concall/company updates analyzed."
+                    logger.info(
+                        "concall_evaluator: done, type=%s, cards=%d, source=%s",
+                        t,
+                        len(data.get("cards", [])),
+                        "nse_transcripts+web" if transcripts else "web_search",
+                    )
             else:
                 logger.warning("concall_evaluator: parsed JSON failed shape validation")
         except json.JSONDecodeError as e:

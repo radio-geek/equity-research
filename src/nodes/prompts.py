@@ -605,8 +605,8 @@ def concall_structured_prompt(
         data_source_note = (
             f"You have been provided with {len(transcripts)} actual concall/earnings transcript(s) "
             f"fetched directly from NSE filings. Company type is {company_type_hint}. "
-            "Analyse ONLY the provided transcript texts below. Do NOT use web search. "
-            "Do not invent or hallucinate any numbers, guidance, or statements not present in the transcripts."
+            "For quarters covered by the provided transcripts, extract data strictly from the transcript text — do not hallucinate. "
+            "For all remaining quarters in the 8-quarter window NOT covered by any transcript, use web search to find the actual concall or filing details."
         )
     else:
         transcript_block = ""
@@ -626,7 +626,19 @@ FOR MAINBOARD_WITH_CONCALLS use this exact shape:
   "type": "mainboard_concall",
   "summary": "One sentence summary.",
   "cards": [
-    {{ "period": "Q2 FY26 (Jul–Sep 2025)", "badge": "concall" | "press-release" | "ppt" | "missing", "bullets": ["...", "..."], "guidance": "..." or null }}
+    {{
+      "period": "Q2 FY26 (Jul–Sep 2025)",
+      "badge": "concall" | "press-release" | "ppt" | "missing",
+      "link": "direct URL to the transcript PDF, BSE/NSE filing, or concall recording page — null if unavailable",
+      "events": [
+        {{ "type": "acquisition" | "fundraise" | "stake_sale" | "capex" | "order_win" | "mgmt_change" | "guidance_change", "headline": "Short headline ≤12 words", "details": ["detail 1", "detail 2"] }}
+      ],
+      "qaHighlights": [
+        {{ "q": "Analyst question (one line)", "a": "Management answer (one-two lines)" }}
+      ],
+      "bullets": ["Operational highlight 1", "Operational highlight 2"],
+      "guidance": "Guidance statement or null"
+    }}
   ],
   "capex": [
     {{ "project": "...", "amount": "₹X Cr", "funding": "..." }}
@@ -640,6 +652,35 @@ FOR MAINBOARD_WITH_CONCALLS use this exact shape:
   "noConcallAlerts": ["Quarter X had only press release."]
 }}
 
+EVENTS — scan BOTH the transcript AND any press releases/BSE announcements for that quarter.
+  Populate for each event that actually occurred:
+  acquisition   = ANY M&A deal, acquisition, or JV formation — ALWAYS include if mentioned, even partial/pending
+  fundraise     = QIP, rights issue, NCD, preferential allotment, loan facility
+  stake_sale    = promoter or major shareholder sold/pledged stake
+  capex         = major new capex (plant, equipment, expansion) — skip routine maintenance
+  order_win     = significant contract or order received
+  mgmt_change   = CEO/CFO/MD/promoter-director change
+  guidance_change = guidance raised or cut meaningfully vs prior quarter
+  For acquisitions: headline = "Acquired <target> for ₹X Cr" (or "Acquisition of <target> announced"),
+    details = [funding source, strategic rationale, expected completion/accretion timeline].
+  If none of these occurred, set "events": [].
+
+Q&A — STRICT RULE: only include a Q&A entry if an analyst challenged management on ONE of these:
+  1. Why a promoter/insider sold or pledged shares
+  2. An auditor qualification, going concern, or governance concern
+  3. A significant guidance cut (analyst pushed back on the reason)
+  4. Acquisition price or deal rationale being questioned
+  5. Debt sustainability or covenant breach concern
+  Maximum 2 Q&A entries per card. Keep each Q and A to 1–2 sentences.
+  If none of these apply, set "qaHighlights": [].
+
+BULLETS — always include financial performance first, then operational highlights. Max 4 bullets total:
+  • Revenue growth % YoY (e.g. "Revenue +18% YoY to ₹X Cr")
+  • EBITDA margin or growth (e.g. "EBITDA margin 22%, +150bps YoY")
+  • PAT growth % (e.g. "PAT +25% YoY to ₹X Cr")
+  • 1 key operational highlight (capacity, geography, product, demand outlook)
+  Skip any metric where the data is unavailable — do not write "N/A".
+
 Cover these 8 quarters (latest first): {quarters_list}
 Badge: "concall" when concall held; "press-release" when only press release; "ppt" when only presentation; "missing" when nothing found.
 Trend in guidanceTable cells: "raised", "cut", "maintained", "neutral".
@@ -650,23 +691,36 @@ FOR SME_COMPANY or MAINBOARD_NO_CONCALLS use:
   "type": "sme_updates",
   "summaryBar": {{ "badge": "SME Listed", "text": "One sentence on reporting frequency and disclosure." }},
   "cards": [
-    {{ "period": "H1 FY26 (Apr–Sep 2025)", "badge": "sme-concall" | "sme-board" | "sme-ppt" | "sme-results" | "sme-interview" | "sme-missing", "bullets": ["..."], "guidance": "..." or null }}
+    {{
+      "period": "H1 FY26 (Apr–Sep 2025)",
+      "badge": "sme-concall" | "sme-board" | "sme-ppt" | "sme-results" | "sme-interview" | "sme-missing",
+      "link": "direct URL to BSE filing, concall recording, or transcript PDF — null if unavailable",
+      "events": [
+        {{ "type": "acquisition" | "fundraise" | "stake_sale" | "capex" | "order_win" | "mgmt_change" | "guidance_change", "headline": "Short headline ≤12 words", "details": ["detail 1"] }}
+      ],
+      "qaHighlights": [
+        {{ "q": "Question (one line)", "a": "Answer (one-two lines)" }}
+      ],
+      "bullets": ["Operational highlight 1"],
+      "guidance": "..." or null
+    }}
   ],
   "capex": [ {{ "project": "...", "amount": "...", "funding": "..." }} or {{ "description": "..." }} ],
   "sources": [ {{ "period": "H1 FY26", "source": "NSE filing dated ..." }} ]
 }}
 
-Up to 6 periods for SME (H1/H2 or quarterly). H2 = Oct–Mar half only; full-year = separate card.
-Return ONLY the JSON object.""" + _reference_date_context() + (
-        "" if has_transcripts else _WEB_SEARCH_INSTRUCTION
-    )
+Same events, Q&A, and bullets rules apply for SME (include revenue/PAT growth %, then 1 operational highlight). Up to 6 periods for SME (H1/H2 or quarterly). H2 = Oct–Mar half only; full-year = separate card.
+Return ONLY the JSON object.""" + _reference_date_context() + _WEB_SEARCH_INSTRUCTION
 
     if has_transcripts:
         user = (
             f"Company: {company_name} (Symbol: {symbol}, Exchange: {exchange}).\n\n"
             f"Analyse the following {len(transcripts)} transcript(s) fetched from NSE and return "
-            "the JSON object. Extract key highlights, guidance, capex, and management commentary "
-            "strictly from the transcript text. Mark quarters with no transcript as badge 'missing'.\n\n"
+            "the JSON object. Extract: (1) events — acquisitions/M&A MUST be captured if mentioned anywhere in transcript, "
+            "plus fundraises, stake sales, major capex, order wins, mgmt changes, guidance changes; "
+            "(2) Q&A ONLY for promoter stake/pledge, auditor concerns, guidance cut pushback, acquisition rationale challenged, or debt concerns; "
+            "(3) bullets: revenue growth %, EBITDA margin/growth, PAT growth %, then 1 operational highlight. "
+            "Mark quarters with no transcript as badge 'missing'.\n\n"
             f"{transcript_block}\n\n"
             "Return the single JSON object. No other text."
         )
@@ -704,6 +758,89 @@ def sectoral_prompt(company_name: str, sector: str) -> tuple[str, str]:
         "Return a JSON object with keys: analysis, headwinds, tailwinds. "
         "Each headwind and tailwind must be a concise bullet (one factor per item). "
         "Include source links in markdown format [Source](url) wherever possible to build credibility."
+    )
+    return system, user
+
+
+def company_updates_prompt(
+    company_name: str,
+    symbol: str,
+    exchange: str,
+    updates_data: dict,
+) -> tuple[str, str]:
+    """Prompt for companies with NO concalls in the last 8 quarters.
+
+    Analyses PPT links, order wins, and press releases to produce a
+    structured 'no_concall_updates' JSON for the frontend.
+    """
+    ppt_links = updates_data.get("ppt_links") or []
+    order_items = updates_data.get("order_items") or []
+    press_items = updates_data.get("press_items") or []
+
+    ppt_block = ""
+    if ppt_links:
+        lines = [f"  - [{p['period']}]({p['link']})" for p in ppt_links]
+        ppt_block = "INVESTOR PRESENTATIONS (from Screener):\n" + "\n".join(lines)
+
+    order_block = ""
+    if order_items:
+        lines = [f"  - [{i['date']}] {i['description']} | link: {i['link']}" for i in order_items]
+        order_block = "ORDER WINS / CONTRACTS (from NSE filings):\n" + "\n".join(lines)
+
+    press_block = ""
+    if press_items:
+        lines = [f"  - [{i['date']}] {i['description']} | link: {i['link']}" for i in press_items]
+        press_block = "PRESS RELEASES / COMPANY UPDATES (from NSE filings):\n" + "\n".join(lines)
+
+    raw_data = "\n\n".join(b for b in [ppt_block, order_block, press_block] if b) or "(no structured data — use web search)"
+
+    system = """You are an equity research analyst. The company below has NOT held any concall in the last 8 quarters.
+Your job is to compile the best available public information about the company from investor presentations, order wins, and press releases.
+
+OUTPUT FORMAT — return ONLY a single valid JSON object (no markdown fences, no text outside JSON):
+
+{
+  "type": "no_concall_updates",
+  "sectionTitle": "Company Updates",
+  "noConcallMessage": "No concalls held in last 8 quarters",
+  "investorPresentation": {
+    "period": "most recent PPT period, e.g. Q3 FY26",
+    "link": "direct URL to the PPT — use one from INVESTOR PRESENTATIONS above",
+    "bullets": [
+      "Revenue guidance / growth trajectory mentioned in PPT",
+      "Key business highlights from latest PPT",
+      "Capacity / expansion plans if any"
+    ]
+  },
+  "orderBook": {
+    "bullets": [
+      "Bagged ₹450 Cr order from [NTPC](https://ntpc.co.in) — [NSE Filing](LINK)",
+      "Received L1 status in ₹220 Cr PGCIL tender — [NSE Filing](LINK)"
+    ]
+  },
+  "pressReleases": {
+    "bullets": [
+      "Commissioned 50 MW solar plant in Madhya Pradesh — [NSE Filing](LINK)",
+      "Board approved ₹200 Cr capex for FY26 — [NSE Filing](LINK)"
+    ]
+  }
+}
+
+RULES:
+- investorPresentation: use the MOST RECENT PPT. Read it via web search to extract 3-5 meaningful bullets. If no PPT link available, use web search to find investor day / annual report highlights.
+- orderBook: list each significant order/contract as a bullet. Use markdown links: wrap the client name as [ClientName](url) if you know the URL, and append [NSE Filing](filing_link) as the source.
+- pressReleases: list key company announcements. Append [NSE Filing](filing_link) as source.
+- If a section has no data, set its bullets to [].
+- noConcallMessage: always exactly "No concalls held in last 8 quarters"
+- Do NOT include any field outside the schema above.""" + _reference_date_context() + _WEB_SEARCH_INSTRUCTION
+
+    user = (
+        f"Company: {company_name} | Symbol: {symbol} | Exchange: {exchange}\n\n"
+        f"{raw_data}\n\n"
+        "Use the above data plus web search to fill the JSON. "
+        "For the investor presentation bullets, read the PPT content via web search and extract real numbers (revenue, margins, order book size). "
+        "For order wins, include the client name, value, and NSE filing link. "
+        "Return ONLY the JSON."
     )
     return system, user
 
