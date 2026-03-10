@@ -1,6 +1,26 @@
 /** Renders concall data grouped by Financial Year with collapsible accordions. */
 import { useState } from 'react'
 
+/** Parse [text](url) markdown links into clickable <a> elements. */
+function renderInlineLinks(text: string): React.ReactNode {
+  const parts: React.ReactNode[] = []
+  const regex = /\[([^\]]+)\]\(([^)]+)\)/g
+  let lastIndex = 0
+  let match
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index))
+    parts.push(
+      <a key={match.index} href={match[2]} target="_blank" rel="noopener noreferrer"
+        style={{ color: 'var(--accent)', textDecoration: 'underline' }}>
+        {match[1]}
+      </a>
+    )
+    lastIndex = match.index + match[0].length
+  }
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex))
+  return parts.length > 0 ? parts : text
+}
+
 interface ConcallSectionProps {
   concall?: Record<string, unknown> | null
   concallUpdatesFallback?: string
@@ -315,8 +335,71 @@ export function ConcallSection({ concall, concallUpdatesFallback, style = {} }: 
     )
   }
 
-  const sectionTitle = concall.sectionTitle as string | undefined
   const type = concall.type as string | undefined
+
+  // ---- no_concall_updates: company had no concalls in last 8 quarters ----
+  if (type === 'no_concall_updates') {
+    const sectionTitle = concall.sectionTitle as string | undefined
+    const noConcallMessage = (concall.noConcallMessage as string | undefined) || 'No concalls held in last 8 quarters'
+    const investorPresentation = concall.investorPresentation as { period?: string; link?: string; bullets?: string[] } | undefined
+    const orderBook = concall.orderBook as { bullets?: string[] } | undefined
+    const pressReleases = concall.pressReleases as { bullets?: string[] } | undefined
+
+    return (
+      <div className="concall-section" style={{ marginBottom: '2rem', ...style }}>
+        <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '0.75rem' }}>{sectionTitle || 'Company Updates'}</h2>
+
+        {/* No concall alert */}
+        <div style={{ marginBottom: '1.25rem', padding: '0.75rem 1rem', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, fontSize: '0.9rem', color: 'var(--red)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <span>⚠</span>
+          <span>{noConcallMessage}</span>
+        </div>
+
+        {/* Investor Presentation */}
+        {(investorPresentation?.bullets?.length ?? 0) > 0 && (
+          <div style={{ marginBottom: '1.25rem' }}>
+            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              Investor Presentation
+              {investorPresentation!.period && (
+                <span style={{ fontWeight: 400, fontSize: '0.85rem', color: 'var(--textMuted)' }}>— {investorPresentation!.period}</span>
+              )}
+              {investorPresentation!.link && (
+                <a href={investorPresentation!.link} target="_blank" rel="noopener noreferrer"
+                  style={{ fontSize: '0.75rem', color: 'var(--accent)', marginLeft: '0.25rem' }}>
+                  View PPT ↗
+                </a>
+              )}
+            </h3>
+            <ul style={{ margin: 0, paddingLeft: '1.1rem', fontSize: '0.88rem', lineHeight: 1.6 }}>
+              {investorPresentation!.bullets!.map((b, i) => <li key={i}>{renderInlineLinks(b)}</li>)}
+            </ul>
+          </div>
+        )}
+
+        {/* Order Book & Contracts */}
+        {(orderBook?.bullets?.length ?? 0) > 0 && (
+          <div style={{ marginBottom: '1.25rem' }}>
+            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem' }}>Order Book & Contracts</h3>
+            <ul style={{ margin: 0, paddingLeft: '1.1rem', fontSize: '0.88rem', lineHeight: 1.6 }}>
+              {orderBook!.bullets!.map((b, i) => <li key={i}>{renderInlineLinks(b)}</li>)}
+            </ul>
+          </div>
+        )}
+
+        {/* Press Releases */}
+        {(pressReleases?.bullets?.length ?? 0) > 0 && (
+          <div style={{ marginBottom: '1.25rem' }}>
+            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem' }}>Press Releases</h3>
+            <ul style={{ margin: 0, paddingLeft: '1.1rem', fontSize: '0.88rem', lineHeight: 1.6 }}>
+              {pressReleases!.bullets!.map((b, i) => <li key={i}>{renderInlineLinks(b)}</li>)}
+            </ul>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  const sectionTitle = concall.sectionTitle as string | undefined
   const summary = concall.summary as string | undefined
   const summaryBar = concall.summaryBar as { badge?: string; text?: string } | undefined
   const cards = (concall.cards as CardData[]) ?? []
