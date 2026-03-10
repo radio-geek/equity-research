@@ -2,11 +2,11 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { ReportView } from '../api'
-import { useAuth } from '../contexts/AuthContext'
+import { ConcallSection } from '../components/ConcallSection'
+import { FlagsList } from '../components/FlagsList'
 import { Section } from '../components/Section'
 import { SectoralCard } from '../components/SectoralCard'
-import { FlagsList } from '../components/FlagsList'
-import { ConcallSection } from '../components/ConcallSection'
+import { useAuth } from '../contexts/AuthContext'
 
 const verdictTierStyles = {
   strong: { bg: 'var(--green)', label: '#047857', wrapBg: 'rgba(5, 150, 105, 0.12)', border: 'var(--green)' },
@@ -163,12 +163,31 @@ export function ReportA({ report }: ReportAProps) {
       </Section>
 
       <Section title="Management & governance">
-        <p style={{ margin: 0, color: 'var(--text)', fontSize: '0.95rem' }}>{report.managementResearch}</p>
+        <div
+          className="report-markdown"
+          style={{
+            color: 'var(--text)',
+            fontSize: '0.95rem',
+          }}
+        >
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {report.managementResearch ?? ''}
+          </ReactMarkdown>
+        </div>
       </Section>
 
       {report.auditorFlags != null && report.auditorFlags !== '' && (
         <Section title="Auditor flags & qualifications">
-          <p style={{ margin: 0, color: 'var(--text)', fontSize: '0.95rem' }}>{report.auditorFlags}</p>
+          <div
+            className="report-markdown"
+            style={{
+              color: 'var(--text)',
+              fontSize: '0.95rem',
+              margin: 0,
+            }}
+          >
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{report.auditorFlags}</ReactMarkdown>
+          </div>
         </Section>
       )}
 

@@ -50,7 +50,11 @@ def _parse_highlights(response: str) -> dict[str, list[str]]:
 
 
 def qoq_financials(state: ResearchState) -> dict[str, Any]:
-    """Fetch yearly + TTM metrics; build scorecard, 5-year trend, highlights, trend insight."""
+    """Fetch yearly + TTM metrics; build scorecard, 5-year trend, highlights, trend insight.
+
+    Yearly/TTM data comes from Screener.in; if consolidated page has no quote (price/market cap
+    NA or missing), the data layer falls back to https://www.screener.in/company/{symbol}/.
+    """
     symbol = (state.get("symbol") or "").strip().upper()
     exchange = (state.get("exchange") or "NSE").strip().upper()
     company_name = (state.get("company_name") or symbol).strip()
