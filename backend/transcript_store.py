@@ -19,7 +19,7 @@ def get_stored_transcripts(symbol: str, exchange: str) -> list[dict[str, Any]]:
             SELECT symbol, exchange, segment, transcript_date, link, description, text, stored_at
             FROM concall_transcripts
             WHERE symbol = %s AND exchange = %s
-            ORDER BY transcript_date DESC
+            ORDER BY TO_TIMESTAMP(transcript_date, 'DD-Mon-YYYY HH24:MI:SS') DESC
             LIMIT 8
             """,
             (symbol.upper(), exchange.upper()),
@@ -33,7 +33,12 @@ def get_latest_stored_date(symbol: str, exchange: str) -> str | None:
     """Return the most recent transcript_date string for this symbol, or None."""
     try:
         row = fetchone(
-            "SELECT MAX(transcript_date) AS latest FROM concall_transcripts WHERE symbol=%s AND exchange=%s",
+            """
+            SELECT transcript_date AS latest FROM concall_transcripts
+            WHERE symbol=%s AND exchange=%s
+            ORDER BY TO_TIMESTAMP(transcript_date, 'DD-Mon-YYYY HH24:MI:SS') DESC
+            LIMIT 1
+            """,
             (symbol.upper(), exchange.upper()),
         )
         return row["latest"] if row else None
@@ -97,7 +102,7 @@ def trim_to_limit(symbol: str, exchange: str, limit: int = 8) -> None:
                 SELECT symbol, exchange, transcript_date
                 FROM concall_transcripts
                 WHERE symbol = %s AND exchange = %s
-                ORDER BY transcript_date DESC
+                ORDER BY TO_TIMESTAMP(transcript_date, 'DD-Mon-YYYY HH24:MI:SS') DESC
                 OFFSET %s
             )
             """,

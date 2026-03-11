@@ -97,7 +97,7 @@ _PRESS_KEYWORDS = [
 ]
 
 # Max chars extracted per PDF to stay within LLM context window
-_MAX_CHARS_PER_PDF = 8000
+_MAX_CHARS_PER_PDF = 20000
 
 
 def _make_session() -> requests.Session:
@@ -415,6 +415,21 @@ def refresh_transcript_cache(symbol: str, exchange: str = "NSE", limit: int = 8)
 
     # Step 1 — load DB
     stored = get_stored_transcripts(sym, exch)
+
+    # Step 1b — short-circuit: if transcripts were stored very recently, skip the live Screener
+    # freshness check entirely (concalls are quarterly; nothing will have changed in 6h).
+    # This makes repeat searches complete in ~1s instead of ~5s.
+    _FRESHNESS_SKIP_HOURS = 24 * 10  # 10 days
+    if stored and not any(not r.get("text") for r in stored):
+        from datetime import datetime, timezone, timedelta
+        from backend.transcript_store import get_latest_stored_at
+        latest_at = get_latest_stored_at(sym, exch)
+        if latest_at and (datetime.now(timezone.utc) - latest_at) < timedelta(hours=_FRESHNESS_SKIP_HOURS):
+            log.info(
+                "concall: DB fresh enough for %s (stored %s ago < %dh) — skipping Screener check",
+                sym, datetime.now(timezone.utc) - latest_at, _FRESHNESS_SKIP_HOURS,
+            )
+            return False  # no updates → caller will use cached report
 
     # Step 2 — retry failed PDF extractions only if there are empty-text rows (Gap 3 + Gap 4)
     failed_rows = [r for r in stored if not r.get("text")] if stored else []

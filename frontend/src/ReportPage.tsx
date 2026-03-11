@@ -12,7 +12,6 @@ import { useAuth } from './contexts/AuthContext'
 import { ReportA } from './reports/ReportA'
 
 const POLL_INTERVAL_MS = 2500
-const CACHE_LOADER_MS = 3000
 
 export default function ReportPage() {
   const { symbol } = useParams<{ symbol: string }>()
@@ -22,7 +21,6 @@ export default function ReportPage() {
   const [status, setStatus] = useState<'idle' | 'pending' | 'running' | 'completed' | 'failed'>('idle')
   const [error, setError] = useState<string | null>(null)
   const [reportView, setReportView] = useState<ReportView | null>(null)
-  const [showCacheLoader, setShowCacheLoader] = useState(false)
   const [pdfLoading, setPdfLoading] = useState(false)
   const [showDownloadLoginModal, setShowDownloadLoginModal] = useState(false)
   const [feedbackSent, setFeedbackSent] = useState<'up' | 'down' | null>(null)
@@ -62,12 +60,7 @@ export default function ReportPage() {
         setStatus(s.status as 'pending' | 'running' | 'completed' | 'failed')
         if (s.status === 'completed' && s.report) {
           const view = mapReportPayloadToView(s.report)
-          if (s.from_cache) {
-            setReportView(view)
-            setShowCacheLoader(true)
-          } else {
-            setReportView(view)
-          }
+          setReportView(view)
           if (pollRef.current) {
             clearInterval(pollRef.current)
             pollRef.current = undefined
@@ -90,13 +83,7 @@ export default function ReportPage() {
     }
   }, [reportId, status])
 
-  useEffect(() => {
-    if (!showCacheLoader) return
-    const t = setTimeout(() => setShowCacheLoader(false), CACHE_LOADER_MS)
-    return () => clearTimeout(t)
-  }, [showCacheLoader])
-
-  const handleDownloadPdf = async () => {
+const handleDownloadPdf = async () => {
     if (!reportId) return
     if (!isAuthenticated) {
       setShowDownloadLoginModal(true)
@@ -143,8 +130,8 @@ export default function ReportPage() {
     }
   }
 
-  const showLoader = status === 'pending' || status === 'running' || showCacheLoader
-  const showReport = status === 'completed' && reportView && !showCacheLoader
+  const showLoader = status === 'pending' || status === 'running'
+  const showReport = status === 'completed' && reportView
 
   if (!decodedSymbol) return null
 
@@ -229,9 +216,9 @@ export default function ReportPage() {
           <div className="loader-chart-bars" aria-hidden>
             <span /><span /><span /><span /><span /><span /><span />
           </div>
-          <p>{showCacheLoader ? 'Loading your report…' : 'Analyzing markets & building your report…'}</p>
+          <p>Analyzing markets & building your report…</p>
           <p className="loader-hint">
-            {showCacheLoader ? 'Serving cached report.' : 'This may take a minute. We’re fetching financials, concalls, and sector data.'}
+            This may take a minute. We’re fetching financials, concalls, and sector data.
           </p>
         </div>
       )}

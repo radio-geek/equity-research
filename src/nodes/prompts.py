@@ -674,12 +674,26 @@ Q&A — STRICT RULE: only include a Q&A entry if an analyst challenged managemen
   Maximum 2 Q&A entries per card. Keep each Q and A to 1–2 sentences.
   If none of these apply, set "qaHighlights": [].
 
-BULLETS — always include financial performance first, then operational highlights. Max 4 bullets total:
-  • Revenue growth % YoY (e.g. "Revenue +18% YoY to ₹X Cr")
-  • EBITDA margin or growth (e.g. "EBITDA margin 22%, +150bps YoY")
-  • PAT growth % (e.g. "PAT +25% YoY to ₹X Cr")
-  • 1 key operational highlight (capacity, geography, product, demand outlook)
-  Skip any metric where the data is unavailable — do not write "N/A".
+BULLETS — always financial first, then ALL operational highlights found in the concall. Target 6–9 bullets; include fewer only when data is genuinely absent.
+
+  FINANCIAL (always first — include all three if available):
+  • Revenue: growth % YoY AND absolute number (e.g. "Revenue +18% YoY to ₹450 Cr")
+  • EBITDA: absolute ₹ AND margin % AND YoY change (e.g. "EBITDA ₹90 Cr, margin 20% (+150bps YoY)")
+  • PAT: growth % YoY AND absolute ₹ (e.g. "PAT +25% YoY to ₹55 Cr")
+
+  OPERATIONAL — scan the entire transcript and include EVERY point below that management mentioned:
+  • Order book: outstanding order book size, L1 wins, revenue visibility (e.g. "Order book ₹1,200 Cr, ~18-month visibility")
+  • Margin guidance: management's commentary on future margin direction and the reason (expansion from operating leverage, RM easing, etc. OR compression from pricing pressure)
+  • Raw materials / input costs: MANDATORY if management mentions ANY price change for ANY input (RM, fuel, freight, power, chemicals, metals, etc.) — always include the exact number they gave (e.g. "Steel prices up 12% YoY, ~80bps EBITDA headwind", "Crude oil down $15/bbl, margin tailwind of ~150bps", "Cotton prices declined 8%, gross margin improved 200bps"). If multiple inputs are mentioned, include all of them. If management mentions only direction (up/down) with no number, still include it.
+  • Receivables / working capital: debtor days change, collection outlook, any stress (e.g. "Debtor days improved from 95 to 72")
+  • Government / policy tailwinds: PLI benefits, budget allocations, tender wins, policy changes explicitly mentioned by management
+  • Headwinds: demand softness, pricing pressure, competition, regulatory challenges, project delays raised by management
+  • Capex / expansion update: include ONLY if not already shown as an event — e.g. plant progress, capacity utilisation milestone
+  • Corporate action: stock split, bonus issue, buyback, special dividend — only if not in events
+  • Competitive edge / differentiation: if management claims superiority over peers — unique technology, proprietary process, exclusive certifications, switching costs, pricing power, customer stickiness, faster delivery, better quality metrics — quote the specific claim (e.g. "Only Indian co. with aerospace-grade titanium forging capacity", "95% client retention vs industry avg 70%", "3x faster turnaround than peers")
+  • Any other forward-looking statement: new geographies, products, partnerships, major customer additions
+
+  Skip a bullet ONLY if the topic was genuinely not discussed — NEVER write "N/A" or "not mentioned".
 
 Cover these 8 quarters (latest first): {quarters_list}
 Badge: "concall" when concall held; "press-release" when only press release; "ppt" when only presentation; "missing" when nothing found.
@@ -709,17 +723,22 @@ FOR SME_COMPANY or MAINBOARD_NO_CONCALLS use:
   "sources": [ {{ "period": "H1 FY26", "source": "NSE filing dated ..." }} ]
 }}
 
-Same events, Q&A, and bullets rules apply for SME (include revenue/PAT growth %, then 1 operational highlight). Up to 6 periods for SME (H1/H2 or quarterly). H2 = Oct–Mar half only; full-year = separate card.
+Same events, Q&A, and bullets rules apply for SME — use the same expanded bullets (financial first, then all operational highlights: order book, margin guidance, RM costs, receivables, govt tailwinds, headwinds, capex, corporate actions). Up to 6 periods for SME (H1/H2 or quarterly). H2 = Oct–Mar half only; full-year = separate card.
 Return ONLY the JSON object.""" + _reference_date_context() + _WEB_SEARCH_INSTRUCTION
 
     if has_transcripts:
         user = (
             f"Company: {company_name} (Symbol: {symbol}, Exchange: {exchange}).\n\n"
             f"Analyse the following {len(transcripts)} transcript(s) fetched from NSE and return "
-            "the JSON object. Extract: (1) events — acquisitions/M&A MUST be captured if mentioned anywhere in transcript, "
-            "plus fundraises, stake sales, major capex, order wins, mgmt changes, guidance changes; "
-            "(2) Q&A ONLY for promoter stake/pledge, auditor concerns, guidance cut pushback, acquisition rationale challenged, or debt concerns; "
-            "(3) bullets: revenue growth %, EBITDA margin/growth, PAT growth %, then 1 operational highlight. "
+            "the JSON object. Extract:\n"
+            "(1) EVENTS — acquisitions/M&A MUST be captured if mentioned anywhere; plus fundraises, stake sales, major capex, order wins, mgmt changes, guidance changes.\n"
+            "(2) Q&A ONLY for promoter stake/pledge, auditor concerns, guidance cut pushback, acquisition rationale challenged, or debt concerns.\n"
+            "(3) BULLETS — financial first (Revenue %, EBITDA ₹+margin, PAT %), then scan the ENTIRE transcript for: "
+            "order book / L1 pipeline, margin guidance and direction, "
+            "raw material / input cost changes (MANDATORY: if management mentions any price change for any input with a % or ₹ figure, include it verbatim with the exact number), "
+            "receivables / debtor days / working capital, government policy tailwinds, business headwinds, "
+            "capex progress, corporate actions (split/bonus/buyback), new geographies/products/customers. "
+            "Include 6–9 bullets; skip a topic only if genuinely not discussed.\n"
             "Mark quarters with no transcript as badge 'missing'.\n\n"
             f"{transcript_block}\n\n"
             "Return the single JSON object. No other text."
