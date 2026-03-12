@@ -41,6 +41,8 @@ def _build_report_payload(state: ResearchState) -> dict[str, Any]:
         payload["executive_summary"] = state["executive_summary"]
     if state.get("company_overview"):
         payload["company_overview"] = state["company_overview"]
+    co_structured = state.get("company_overview_structured")
+    payload["company_overview_structured"] = co_structured if isinstance(co_structured, dict) else None
     if state.get("management_research"):
         payload["management_research"] = state["management_research"]
     if state.get("financial_risk"):

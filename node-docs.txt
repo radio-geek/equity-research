@@ -241,74 +241,67 @@ KNOWN LIMITATIONS / FUTURE IMPROVEMENTS
 ================================================================================
 NODE: company_overview
 File: src/nodes/company_overview.py
-Prompt: src/nodes/prompts.py → company_overview_prompt()
+Prompt: src/nodes/prompts.py → company_overview_structured_prompt()
 Report: src/report/templates/base.html (section: "Company Overview")
-         backend/pdf_render.py converts markdown → HTML for PDF/HTML report
-Frontend: frontend/src/reports/ReportA.tsx — renders via react-markdown + remark-gfm
-          frontend/src/index.css — .report-markdown for tables, headings, lists, links
+         backend/pdf_render.py: _company_overview_structured_to_html() when structured
+         present; else _markdown_to_html(company_overview)
+Frontend: frontend/src/reports/ReportA.tsx — structured: opening, ValueChainFlowchart,
+          business model table, key products list, OverviewTimeline; fallback: ReactMarkdown
+          on companyOverview when companyOverviewStructured absent
+Components: frontend/src/components/ValueChainFlowchart.tsx, OverviewTimeline.tsx
+State: src/state.py — company_overview (str), company_overview_structured (NotRequired[dict])
 ================================================================================
 
 WHAT THIS NODE DOES
 --------------------
-Generates an investor-focused company overview in Markdown: what the company does,
-how it makes money, and where it fits in the industry value chain. Reads company_name,
-symbol, meta, quote from ResearchState; writes company_overview (string) to state.
-Uses invoke_llm(use_web_search=True, use_tavily_only=False) → OpenAI Responses API
-with built-in web_search_preview first; Tavily fallback if TAVILY_API_KEY set and
-OpenAI search unavailable.
+Generates a structured company overview for investors. Uses company_overview_structured_prompt
+to request a single JSON object from the LLM (web search mandatory). Parses and validates
+the JSON; writes company_overview_structured (dict) and company_overview (string summary)
+to state. The string summary is built from opening + value chain position for aggregate
+and PDF fallback; existing cached reports without structured data still render via
+company_overview markdown on the frontend.
 
 DATA FLOW
 ----------
 Inputs from state: company_name, symbol, meta, quote
-Output to state: company_overview (Markdown string)
+Output to state: company_overview (string, always — summary for aggregate/PDF)
+                 company_overview_structured (dict, when JSON parse/validate succeeds)
 
-PROMPT DESIGN (company_overview_prompt)
-----------------------------------------
-Role: Senior Equity Research Analyst. Goal: explain to an investor what the company
-does and where it sits in the industry value chain; reader gets core business in
-~30 seconds and full value-chain context in a few minutes.
+STRUCTURED SCHEMA (company_overview_structured)
+------------------------------------------------
+- opening: string (3–4 lines: what the company does, who it serves, how it makes money)
+- value_chain: { stages, company_stage_indices (number[], 0-based; or company_stage_index for single), company_position_description, company_position (optional) }
+- business_model_table: { rows: [ { segment, importance, description } ] }
+- key_products: string[]
+- recent_developments: [ { year, event } ]
 
-Web search (mandatory): Model must use web search; no reliance on training data
-for company-specific facts. Ordered search strategy:
-1. Industry value chain — e.g. "[sector] value chain India", "[sector] industry structure upstream downstream"
-2. Company business — annual report, investor presentation, business model, NSE overview
-3. Company positioning — "supplier to", "customers", backward/forward integration
-4. Recent context — expansion, acquisition, recent developments
-All facts must be cited with inline Markdown links.
-
-Required structure (## headings):
-- Opening: One-sentence pitch + short para (what it does, key customers, differentiation).
-- Industry Value Chain: (1) Describe the sector value chain (Stage A → Stage B → … → End customer).
-  (2) Where [Company] fits: which stage(s), upstream/midstream/downstream, what it buys from and sells to.
-- Business Model & Revenue Drivers: revenue streams, customer types; table Segment | Importance | Description.
-- Key Products / Services: 5–8 bullets, actual names from AR/presentations, cited.
-- Sector Overview & Industry Positioning: sector context, company positioning vs peers.
-- Recent Developments: expansion, M&A, diversification, major orders; YYYY – Event.
-- Key Business Milestones: IPO, capacity, acquisitions, contracts; YYYY – Event.
-
-Output: Strictly Markdown (no HTML). Every fact = inline citation; omit or note if no source.
+PROMPT DESIGN (company_overview_structured_prompt)
+---------------------------------------------------
+Same web search strategy as before: (1) industry value chain, (2) company business/
+segments/products, (3) company positioning, (4) recent developments. Output is JSON only
+(no markdown/code fences). Required keys and types are specified in the system prompt.
+On parse failure or shape validation failure, node still sets company_overview to raw
+LLM output (truncated) or "Overview unavailable." so downstream consumers always have
+a string.
 
 DOWNSTREAM
 ----------
-- Report generator passes company_overview through to payload unchanged
-- backend/pdf_render.py: _markdown_to_html() converts to HTML (markdown lib, "tables"
-  extension) for Jinja template and PDF
-- Frontend: ReactMarkdown + remarkGfm render companyOverview; .report-markdown styles
-  tables, h2/h3, lists, links
+- Report generator: payload.company_overview (string), payload.company_overview_structured (dict)
+- backend/pdf_render.py: if company_overview_structured present, build HTML from it
+  (opening, value chain, table, key products, timeline); else _markdown_to_html(company_overview)
+- Frontend: if report.companyOverviewStructured present, render opening + ValueChainFlowchart
+  + table + key products + OverviewTimeline; else ReactMarkdown(companyOverview)
 
-OUTPUT FORMAT
---------------
-Markdown: headings (##), tables, lists, bold, links. No HTML.
-
-TESTED ON
-----------
-(To be filled after first run with new prompt: symbol, date, note that overview
-includes value chain and company position.)
+FALLBACK
+--------
+Reports generated before this change have no company_overview_structured; frontend
+shows companyOverview as markdown. Aggregate and follow-up nodes use company_overview
+string only.
 
 KNOWN LIMITATIONS / FUTURE IMPROVEMENTS
 -----------------------------------------
 - Relies on LLM web search; value-chain and segment data may vary by source quality
-- Structured JSON output variant could be added later for strict schema
+- Value chain "company position" is prose; no automatic stage highlighting in flowchart
 ================================================================================
 
 ================================================================================

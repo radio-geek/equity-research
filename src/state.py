@@ -45,6 +45,7 @@ class ResearchState(TypedDict, total=False):
 
     # Research outputs (one per node)
     company_overview: str
+    company_overview_structured: NotRequired[dict]  # opening, value_chain, business_model_table, key_products, recent_developments
     management_research: str
     financial_risk: str
     concall_evaluation: str

@@ -198,6 +198,46 @@ def company_overview_prompt(company_name: str, symbol: str, meta: dict, quote: d
     return system, user
 
 
+def company_overview_structured_prompt(
+    company_name: str, symbol: str, meta: dict, quote: dict
+) -> tuple[str, str]:
+    """Prompt for structured JSON company overview (opening, value chain, table, products, timeline)."""
+    system = (
+        "Role: You are a Senior Equity Research Analyst.\n\n"
+        "Objective: Produce a structured company overview for an investor. You MUST use the web search tool; do not rely on training knowledge for company-specific facts.\n\n"
+        "Search in this order:\n"
+        "1. Industry value chain: \"[sector/industry] value chain India\", \"[sector] industry structure upstream downstream\". Get real stages (e.g. raw materials → processing → OEM → distribution → end customer).\n"
+        "2. Company business: \"[company_name] annual report\", \"[company_name] investor presentation\", \"[company_name] business model\", \"[symbol] NSE company overview\". Get products, segments, revenue mix.\n"
+        "3. Company positioning: \"[company_name] supplier to\", \"[company_name] customers\", \"[company_name] backward integration\" or \"forward integration\".\n"
+        "4. Recent context: \"[company_name] expansion\", \"[company_name] acquisition\", \"[company_name] recent developments\".\n\n"
+        "Return ONLY a single valid JSON object (no markdown, no code fences). Use this exact shape:\n\n"
+        "{\n"
+        '  "opening": "3–4 lines of plain text: what the company actually does — core business, who it serves, how it makes money. Concise and investor-ready. No markdown."\n'
+        ',  "value_chain": { "stages": ["Stage A", "Stage B", "Stage C", "End customer"], "company_stage_indices": [0, 1], "company_position_description": "2–3 lines: what the company does in these nodes. Be descriptive.", "company_position": "Optional short label (e.g. Tier-1 supplier, or Integrated player)." }\n'
+        ',  "business_model_table": { "rows": [ { "segment": "Segment name", "importance": "Primary" | "Secondary" | "Emerging", "description": "Brief description" } ] }\n'
+        ',  "key_products": ["Product or service 1", "Product or service 2", "…"]\n'
+        ',  "recent_developments": [ { "year": "YYYY", "event": "Short description" } ]\n'
+        "}\n\n"
+        "Rules:\n"
+        "- opening: 3–4 lines only; what the company does, who it serves, how it makes money.\n"
+        "- value_chain.stages: ordered list of industry stages (typically 4–8). company_stage_indices: array of 0-based indices of stages where this company operates — e.g. [1] for one stage, [0, 1, 2] for three, or [0, 1, 2, 3, 4] for all if the company spans the entire value chain. company_position_description: 2–3 lines describing what the company does in these nodes (inputs, outputs, role). company_position: optional one-line label.\n"
+        "- business_model_table.rows: at least one row; importance must be Primary, Secondary, or Emerging.\n"
+        "- key_products: 5–8 actual product or service names from AR/investor materials.\n"
+        "- recent_developments: combine recent developments and key milestones; chronological; each entry has year and event. If multiple milestones in the same year, use separate { year, event } entries for each (they will be grouped by year in the UI).\n"
+        "Base every fact on search results. If you cannot find a source, omit the claim or say so briefly.\n"
+    ) + _reference_date_context()
+
+    user = (
+        f"Company: {company_name} (symbol: {symbol})\n\n"
+        f"Meta Data: {_serialize(meta)}\n\n"
+        f"Quote Data: {_serialize(quote)}\n\n"
+        "Using web search: (1) Industry value chain for this sector. (2) What the company does, segments, products, customers. "
+        "(3) Where the company fits in the value chain. (4) Recent developments and milestones. "
+        "Return only the JSON object with opening, value_chain, business_model_table, key_products, recent_developments."
+    )
+    return system, user
+
+
 def management_prompt(company_name: str, symbol: str, meta: dict, shareholding: list) -> tuple[str, str]:
     system = (
         "Role: You are an equity research analyst preparing the Management & Governance section of a detailed stock research report.\n\n"

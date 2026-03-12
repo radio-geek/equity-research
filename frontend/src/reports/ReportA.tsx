@@ -4,8 +4,10 @@ import remarkGfm from 'remark-gfm'
 import type { ReportView } from '../api'
 import { ConcallSection } from '../components/ConcallSection'
 import { FlagsList } from '../components/FlagsList'
+import { OverviewTimeline } from '../components/OverviewTimeline'
 import { Section } from '../components/Section'
 import { SectoralCard } from '../components/SectoralCard'
+import { ValueChainFlowchart } from '../components/ValueChainFlowchart'
 import { useAuth } from '../contexts/AuthContext'
 
 const verdictTierStyles = {
@@ -149,17 +151,89 @@ export function ReportA({ report }: ReportAProps) {
       </div>
 
       <Section title="Company overview">
-        <div
-          className="report-markdown"
-          style={{
-            color: 'var(--text)',
-            fontSize: '0.95rem',
-          }}
-        >
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {report.companyOverview ?? ''}
-          </ReactMarkdown>
-        </div>
+        {report.companyOverviewStructured ? (
+          <div
+            style={{
+              color: 'var(--text)',
+              fontSize: '0.95rem',
+              lineHeight: 1.6,
+              padding: '0.5rem 0',
+            }}
+          >
+            {report.companyOverviewStructured.opening && (
+              <p style={{ marginBottom: '2rem', lineHeight: 1.65 }}>
+                {report.companyOverviewStructured.opening}
+              </p>
+            )}
+            {report.companyOverviewStructured.valueChain?.stages?.length ? (
+              <div style={{ marginBottom: '2.5rem' }}>
+                <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.75rem', marginTop: 0, color: 'var(--text)' }}>
+                  Industry value chain
+                </h3>
+                <ValueChainFlowchart
+                  stages={report.companyOverviewStructured.valueChain.stages}
+                  companyStageIndex={report.companyOverviewStructured.valueChain.companyStageIndex}
+                  companyStageIndices={report.companyOverviewStructured.valueChain.companyStageIndices}
+                  companyPosition={report.companyOverviewStructured.valueChain.companyPosition}
+                  companyPositionDescription={report.companyOverviewStructured.valueChain.companyPositionDescription}
+                />
+              </div>
+            ) : null}
+            {report.companyOverviewStructured.businessModelTable?.rows?.length ? (
+              <div style={{ marginBottom: '2.5rem' }}>
+                <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.75rem', marginTop: 0, color: 'var(--text)' }}>
+                  Business model & revenue drivers
+                </h3>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'var(--fontMono)', fontSize: '0.875rem' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ textAlign: 'left', padding: '0.75rem 1rem', borderBottom: '2px solid var(--border)', color: 'var(--textMuted)' }}>Segment</th>
+                        <th style={{ textAlign: 'left', padding: '0.75rem 1rem', borderBottom: '2px solid var(--border)', color: 'var(--textMuted)' }}>Importance</th>
+                        <th style={{ textAlign: 'left', padding: '0.75rem 1rem', borderBottom: '2px solid var(--border)', color: 'var(--textMuted)' }}>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {report.companyOverviewStructured.businessModelTable.rows.map((row, ri) => (
+                        <tr key={ri}>
+                          <td style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--border)', verticalAlign: 'top' }}>{row.segment}</td>
+                          <td style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--border)', verticalAlign: 'top' }}>{row.importance}</td>
+                          <td style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--border)', verticalAlign: 'top', lineHeight: 1.5 }}>{row.description}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
+            {report.companyOverviewStructured.keyProducts?.length ? (
+              <div style={{ marginBottom: '2.5rem' }}>
+                <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.75rem', marginTop: 0, color: 'var(--text)' }}>
+                  Key products / services
+                </h3>
+                <ul style={{ margin: 0, paddingLeft: '1.5rem', listStyleType: 'disc' }}>
+                  {report.companyOverviewStructured.keyProducts.map((p, i) => (
+                    <li key={i} style={{ marginBottom: '0.5rem', lineHeight: 1.5 }}>{p}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {report.companyOverviewStructured.recentDevelopments?.length ? (
+              <div style={{ marginBottom: 0 }}>
+                <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.75rem', marginTop: 0, color: 'var(--text)' }}>
+                  Recent developments & milestones
+                </h3>
+                <OverviewTimeline items={report.companyOverviewStructured.recentDevelopments} />
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <div className="report-markdown" style={{ color: 'var(--text)', fontSize: '0.95rem' }}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {report.companyOverview ?? ''}
+            </ReactMarkdown>
+          </div>
+        )}
       </Section>
 
       <Section title="Management & governance">

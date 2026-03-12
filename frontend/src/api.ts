@@ -97,6 +97,19 @@ export interface ReportPayload {
   }
   executive_summary?: string
   company_overview?: string
+  company_overview_structured?: {
+    opening?: string
+    value_chain?: {
+      stages?: string[]
+      company_position?: string
+      company_stage_index?: number
+      company_stage_indices?: number[]
+      company_position_description?: string
+    }
+    business_model_table?: { rows?: Array<{ segment?: string; importance?: string; description?: string }> }
+    key_products?: string[]
+    recent_developments?: Array<{ year?: string; event?: string }>
+  }
   management_research?: string
   financial_risk?: string
   auditor_flags?: string | null
@@ -131,6 +144,19 @@ export interface ReportView {
   exchange: string
   sector: string
   companyOverview: string
+  companyOverviewStructured?: {
+    opening?: string
+    valueChain?: {
+      stages?: string[]
+      companyPosition?: string
+      companyStageIndex?: number
+      companyStageIndices?: number[]
+      companyPositionDescription?: string
+    }
+    businessModelTable?: { rows?: Array<{ segment?: string; importance?: string; description?: string }> }
+    keyProducts?: string[]
+    recentDevelopments?: Array<{ year?: string; event?: string }>
+  }
   managementResearch: string
   financialRisk?: string
   auditorFlags?: string | null
@@ -174,6 +200,27 @@ export function mapReportPayloadToView(payload: ReportPayload | null | undefined
     exchange: meta.exchange ?? 'NSE',
     sector: meta.sector ?? '',
     companyOverview: payload.company_overview ?? '',
+    companyOverviewStructured: (() => {
+      const co = payload.company_overview_structured
+      if (!co || typeof co !== 'object') return undefined
+      return {
+        opening: co.opening,
+        valueChain: co.value_chain
+          ? {
+              stages: co.value_chain.stages,
+              companyPosition: co.value_chain.company_position,
+              companyStageIndex: co.value_chain.company_stage_index,
+              companyStageIndices: co.value_chain.company_stage_indices,
+              companyPositionDescription: co.value_chain.company_position_description,
+            }
+          : undefined,
+        businessModelTable: co.business_model_table
+          ? { rows: co.business_model_table.rows }
+          : undefined,
+        keyProducts: co.key_products,
+        recentDevelopments: co.recent_developments,
+      }
+    })(),
     managementResearch: payload.management_research ?? '',
     financialRisk: payload.financial_risk,
     auditorFlags: payload.auditor_flags ?? undefined,

@@ -55,6 +55,85 @@ def _sectoral_bullets_to_html(bullets: list[str]) -> str:
     return "<ul class=\"sectoral-list\">" + "".join(items) + "</ul>"
 
 
+def _company_overview_structured_to_html(coh: dict | None) -> str:
+    """Build Company Overview HTML from structured object (opening, value_chain, table, products, timeline)."""
+    if not coh or not isinstance(coh, dict):
+        return ""
+    parts = []
+    opening = coh.get("opening")
+    if opening and isinstance(opening, str):
+        parts.append(f"<p>{_escape_html(opening)}</p>")
+    vc = coh.get("value_chain")
+    if isinstance(vc, dict):
+        stages = vc.get("stages")
+        if isinstance(stages, list) and stages:
+            chain = " → ".join(_escape_html(str(s)) for s in stages)
+            parts.append(f"<p><strong>Value chain:</strong> {chain}</p>")
+        stage_indices = vc.get("company_stage_indices")
+        if isinstance(stage_indices, list) and stages:
+            valid = [i for i in stage_indices if isinstance(i, int) and 0 <= i < len(stages)]
+            if valid:
+                if len(valid) == len(stages):
+                    parts.append("<p><strong>Company spans the full value chain.</strong></p>")
+                else:
+                    names = ", ".join(_escape_html(str(stages[i])) for i in sorted(valid))
+                    parts.append(f"<p><strong>Company operates in:</strong> {names}</p>")
+        elif stages:
+            stage_idx = vc.get("company_stage_index")
+            if stage_idx is not None and isinstance(stage_idx, int) and 0 <= stage_idx < len(stages):
+                stage_name = _escape_html(str(stages[stage_idx]))
+                parts.append(f"<p><strong>Company operates in:</strong> {stage_name}</p>")
+        desc = vc.get("company_position_description")
+        if desc and isinstance(desc, str):
+            parts.append(f"<p>{_escape_html(desc)}</p>")
+        elif vc.get("company_position") and isinstance(vc["company_position"], str):
+            parts.append(f"<p><strong>Company position:</strong> {_escape_html(vc['company_position'])}</p>")
+    bmt = coh.get("business_model_table")
+    if isinstance(bmt, dict):
+        rows = bmt.get("rows")
+        if isinstance(rows, list) and rows:
+            parts.append("<p><strong>Business model & revenue drivers</strong></p>")
+            parts.append("<table class=\"report-table\"><thead><tr><th>Segment</th><th>Importance</th><th>Description</th></tr></thead><tbody>")
+            for r in rows:
+                if isinstance(r, dict):
+                    seg = _escape_html(str(r.get("segment", "")))
+                    imp = _escape_html(str(r.get("importance", "")))
+                    desc = _escape_html(str(r.get("description", "")))
+                    parts.append(f"<tr><td>{seg}</td><td>{imp}</td><td>{desc}</td></tr>")
+            parts.append("</tbody></table>")
+    kp = coh.get("key_products")
+    if isinstance(kp, list) and kp:
+        parts.append("<p><strong>Key products / services</strong></p><ul>")
+        for item in kp:
+            if item:
+                parts.append(f"<li>{_escape_html(str(item))}</li>")
+        parts.append("</ul>")
+    rd = coh.get("recent_developments")
+    if isinstance(rd, list) and rd:
+        parts.append("<p><strong>Recent developments & milestones</strong></p><ul>")
+        for item in rd:
+            if isinstance(item, dict):
+                y = item.get("year", "")
+                e = item.get("event", "")
+                if y or e:
+                    parts.append(f"<li><strong>{_escape_html(str(y))}</strong> – {_escape_html(str(e))}</li>")
+        parts.append("</ul>")
+    return "\n".join(parts) if parts else ""
+
+
+def _escape_html(s: str) -> str:
+    """Escape HTML entities in a string."""
+    if not s:
+        return ""
+    return (
+        str(s)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
 def _concall_to_html(concall: dict | None) -> str:
     """Turn structured concall object into simple HTML for PDF."""
     if not concall or not isinstance(concall, dict):
@@ -134,7 +213,11 @@ def payload_to_template_context(payload: dict) -> dict[str, Any]:
         "key_metrics": key_metrics,
         "screener_quote": screener_quote,
         "executive_summary": _text_to_html(payload.get("executive_summary") or ""),
-        "company_overview": _markdown_to_html(payload.get("company_overview") or ""),
+        "company_overview": (
+            _company_overview_structured_to_html(payload.get("company_overview_structured"))
+            if payload.get("company_overview_structured")
+            else _markdown_to_html(payload.get("company_overview") or "")
+        ),
         "management_research": _markdown_to_html(payload.get("management_research") or ""),
         "financial_risk": _text_to_html(payload.get("financial_risk") or ""),
         "auditor_flags": _markdown_to_html(payload.get("auditor_flags") or "") if payload.get("auditor_flags") else None,
