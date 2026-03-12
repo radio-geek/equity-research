@@ -111,8 +111,22 @@ export interface ReportPayload {
     recent_developments?: Array<{ year?: string; event?: string }>
   }
   management_research?: string
+  management_people?: Array<{ name?: string; designation?: string; description?: string }>
+  management_governance_news?: Array<{ text?: string; sentiment?: 'positive' | 'negative' | 'neutral' }>
   financial_risk?: string
   auditor_flags?: string | null
+  auditor_flags_structured?: {
+    summary?: string
+    events?: Array<{
+      date?: string
+      fy?: string
+      type?: string
+      issue?: string
+      is_red_flag?: boolean
+      status?: string
+      management_response?: string
+    }>
+  } | null
   concall?: Record<string, unknown> | null
   sectoral?: {
     analysis?: string
@@ -158,8 +172,22 @@ export interface ReportView {
     recentDevelopments?: Array<{ year?: string; event?: string }>
   }
   managementResearch: string
+  managementPeople?: Array<{ name?: string; designation?: string; description?: string }>
+  managementGovernanceNews?: Array<{ text?: string; sentiment?: 'positive' | 'negative' | 'neutral' }>
   financialRisk?: string
   auditorFlags?: string | null
+  auditorFlagsStructured?: {
+    summary?: string
+    events?: Array<{
+      date?: string
+      fy?: string
+      type?: string
+      issue?: string
+      isRedFlag?: boolean
+      status?: string
+      managementResponse?: string
+    }>
+  } | null
   concall?: ReportPayload['concall']
   concallUpdates?: string
   yearlyMetrics?: Array<Record<string, number | string | null | undefined>>
@@ -222,8 +250,27 @@ export function mapReportPayloadToView(payload: ReportPayload | null | undefined
       }
     })(),
     managementResearch: payload.management_research ?? '',
+    managementPeople: Array.isArray(payload.management_people) ? payload.management_people : undefined,
+    managementGovernanceNews: Array.isArray(payload.management_governance_news) ? payload.management_governance_news : undefined,
     financialRisk: payload.financial_risk,
     auditorFlags: payload.auditor_flags ?? undefined,
+    auditorFlagsStructured: (() => {
+      const s = payload.auditor_flags_structured
+      if (!s || typeof s !== 'object') return undefined
+      type Ev = NonNullable<ReportView['auditorFlagsStructured']>['events'] extends (infer E)[] | undefined ? E : never
+      const events: Ev[] | undefined = Array.isArray(s.events)
+        ? s.events.map((e: Record<string, unknown>): Ev => ({
+            date: e.date as string | undefined,
+            fy: e.fy as string | undefined,
+            type: e.type as string | undefined,
+            issue: e.issue as string | undefined,
+            isRedFlag: e.is_red_flag as boolean | undefined,
+            status: e.status as string | undefined,
+            managementResponse: e.management_response as string | undefined,
+          }))
+        : undefined
+      return { summary: s.summary, events }
+    })(),
     concall: payload.concall ?? undefined,
     yearlyMetrics: financials.yearly_metrics ?? [],
     financialScorecard: financials.financial_scorecard

@@ -16,6 +16,97 @@ const verdictTierStyles = {
   weak: { bg: 'var(--red)', label: '#b91c1c', wrapBg: 'rgba(220, 38, 38, 0.12)', border: 'var(--red)' },
 } as const
 
+const auditTypeBadgeBg: Record<string, string> = {
+  'qualified opinion': '#b71c1c',
+  'emphasis of matter': '#e65100',
+  'going concern': '#4a148c',
+  caro: '#1565c0',
+  'secretarial audit': '#004d40',
+  'auditor change': '#880e4f',
+}
+
+function auditEventDateLabel(fy: string | undefined, date: string | undefined): string {
+  if (!date) return fy ?? '—'
+  if (date.length >= 7 && date[4] === '-') {
+    const months = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    const y = date.slice(0, 4)
+    const m = parseInt(date.slice(5, 7), 10)
+    if (m >= 1 && m <= 12) return `${fy ?? ''} · ${months[m]} ${y}`.trim()
+  }
+  return `${fy ?? ''} · ${date}`.trim() || '—'
+}
+
+type AuditorEvent = NonNullable<NonNullable<ReportView['auditorFlagsStructured']>['events']>[number]
+
+function AuditorTimelineView({ summary, events }: { summary?: string; events: AuditorEvent[] }) {
+  return (
+    <div style={{ color: 'var(--text)', fontSize: '0.95rem' }}>
+      {summary ? <p style={{ margin: '0 0 1rem 0', fontWeight: 600, color: 'var(--textMuted)' }}>{summary}</p> : null}
+      <div style={{ borderLeft: '3px solid var(--border)', paddingLeft: '1.2rem', marginLeft: 2 }}>
+        {events.map((ev, i) => {
+          const typeKey = (ev.type ?? 'other').toLowerCase()
+          const badgeBg = auditTypeBadgeBg[typeKey] ?? '#546e7a'
+          const isRed = ev.isRedFlag === true
+          return (
+            <div
+              key={i}
+              style={{
+                marginBottom: '1rem',
+                padding: '10px 12px',
+                background: isRed ? 'rgba(198, 40, 40, 0.08)' : 'var(--surface)',
+                borderLeft: `4px solid ${isRed ? '#c62828' : 'var(--border)'}`,
+                borderRadius: 6,
+              }}
+            >
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--textMuted)' }}>
+                  {auditEventDateLabel(ev.fy, ev.date)}
+                </span>
+                <span
+                  style={{
+                    display: 'inline-block',
+                    padding: '2px 8px',
+                    borderRadius: 10,
+                    fontSize: '0.7rem',
+                    fontWeight: 700,
+                    color: '#fff',
+                    background: badgeBg,
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  {ev.type ?? 'Other'}
+                </span>
+                {ev.status ? (
+                  <span
+                    style={{
+                      fontSize: '0.7rem',
+                      padding: '2px 6px',
+                      borderRadius: 6,
+                      fontWeight: 600,
+                      textTransform: 'uppercase',
+                      marginLeft: 'auto',
+                      background: ev.status === 'Resolved' ? 'rgba(5, 150, 105, 0.2)' : ev.status === 'Pending' ? 'rgba(255, 111, 0, 0.25)' : 'rgba(183, 28, 28, 0.2)',
+                      color: ev.status === 'Resolved' ? '#047857' : ev.status === 'Pending' ? '#e65100' : '#b71c1c',
+                    }}
+                  >
+                    {ev.status}
+                  </span>
+                ) : null}
+              </div>
+              <p style={{ margin: 0, fontSize: '0.9rem', lineHeight: 1.4 }}>{ev.issue ?? '—'}</p>
+              {ev.managementResponse ? (
+                <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: 'var(--textMuted)', fontStyle: 'italic' }}>
+                  {ev.managementResponse}
+                </p>
+              ) : null}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function FinancialScorecard({ scorecard }: { scorecard: NonNullable<ReportView['financialScorecard']> }) {
   const tier = (scorecard.verdictTier ?? 'average') as keyof typeof verdictTierStyles
   const style = verdictTierStyles[tier] ?? verdictTierStyles.average
@@ -237,33 +328,112 @@ export function ReportA({ report }: ReportAProps) {
       </Section>
 
       <Section title="Management & governance">
-        <div
-          className="report-markdown"
-          style={{
-            color: 'var(--text)',
-            fontSize: '0.95rem',
-          }}
-        >
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {report.managementResearch ?? ''}
-          </ReactMarkdown>
-        </div>
-      </Section>
-
-      {report.auditorFlags != null && report.auditorFlags !== '' && (
-        <Section title="Auditor flags & qualifications">
+        {report.managementPeople?.length ? (
+          <>
+            <h2 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.75rem', color: 'var(--text)' }}>Promoter & Board</h2>
+            <div style={{ overflowX: 'auto', marginBottom: '1.25rem' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'var(--fontMono)', fontSize: '0.875rem' }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border)', color: 'var(--textMuted)' }}>Name</th>
+                    <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border)', color: 'var(--textMuted)' }}>Designation</th>
+                    <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border)', color: 'var(--textMuted)' }}>Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.managementPeople.map((p, i) => (
+                    <tr key={i}>
+                      <td
+                        className="management-people-name"
+                        style={{
+                          padding: '0.5rem 0.75rem',
+                          borderBottom: '1px solid var(--border)',
+                          fontWeight: 700,
+                          color: 'var(--accent, #0f766e)',
+                          background: 'rgba(15, 118, 110, 0.08)',
+                          width: '12em',
+                          verticalAlign: 'top',
+                        }}
+                      >
+                        {p.name ?? '—'}
+                      </td>
+                      <td style={{ padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border)' }}>{p.designation ?? '—'}</td>
+                      <td style={{ padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border)', maxWidth: '50%' }}>{p.description ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : null}
+        {report.managementResearch ? (
           <div
             className="report-markdown"
-            style={{
-              color: 'var(--text)',
-              fontSize: '0.95rem',
-              margin: 0,
-            }}
+            style={{ color: 'var(--text)', fontSize: '0.95rem', marginBottom: report.managementGovernanceNews?.length ? '1.25rem' : 0 }}
           >
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{report.auditorFlags}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{report.managementResearch}</ReactMarkdown>
           </div>
-        </Section>
-      )}
+        ) : null}
+        {report.managementGovernanceNews?.length ? (
+          <>
+            <h2 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.75rem', color: 'var(--text)' }}>Governance news</h2>
+            <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+              {report.managementGovernanceNews.map((n, i) => (
+                <li
+                  key={i}
+                  style={{
+                    padding: '0.5rem 0.65rem',
+                    marginBottom: '0.5rem',
+                    borderRadius: 6,
+                    borderLeft: `4px solid ${n.sentiment === 'positive' ? 'var(--green)' : n.sentiment === 'negative' ? 'var(--red)' : 'var(--border)'}`,
+                    background: 'var(--surface)',
+                    fontSize: '0.9rem',
+                    lineHeight: 1.45,
+                  }}
+                >
+                  {n.sentiment && n.sentiment !== 'neutral' ? (
+                    <span
+                      style={{
+                        display: 'inline-block',
+                        padding: '2px 8px',
+                        borderRadius: 10,
+                        fontSize: '0.7rem',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        marginRight: '0.5rem',
+                        background: n.sentiment === 'positive' ? 'rgba(5, 150, 105, 0.2)' : 'rgba(220, 38, 38, 0.2)',
+                        color: n.sentiment === 'positive' ? 'var(--green)' : 'var(--red)',
+                      }}
+                    >
+                      {n.sentiment}
+                    </span>
+                  ) : null}
+                  {n.text ?? '—'}
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : null}
+        {!report.managementPeople?.length && !report.managementResearch && !report.managementGovernanceNews?.length ? (
+          <p style={{ color: 'var(--textMuted)', fontSize: '0.95rem' }}>No management & governance data available.</p>
+        ) : null}
+      </Section>
+
+      {(() => {
+        const af = report.auditorFlagsStructured
+        const hasTimeline = (af?.events?.length ?? 0) > 0
+        return hasTimeline && af ? (
+          <Section title="Auditor flags & qualifications">
+            <AuditorTimelineView summary={af.summary} events={af.events ?? []} />
+          </Section>
+        ) : report.auditorFlags != null && report.auditorFlags !== '' ? (
+          <Section title="Auditor flags & qualifications">
+            <div className="report-markdown" style={{ color: 'var(--text)', fontSize: '0.95rem', margin: 0 }}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{report.auditorFlags}</ReactMarkdown>
+            </div>
+          </Section>
+        ) : null
+      })()}
 
       {isAuthenticated ? (
         <>

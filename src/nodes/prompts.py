@@ -243,39 +243,47 @@ def management_prompt(company_name: str, symbol: str, meta: dict, shareholding: 
         "Role: You are an equity research analyst preparing the Management & Governance section of a detailed stock research report.\n\n"
 
         "Objective:\n"
-        "Use the provided materials (ARs, concalls, presentations, announcements) and web search to produce a structured, objective, data-driven section that helps investors assess management quality and governance. Highlight any gaps in information or assumptions made.\n\n"
+        "Use the provided materials (ARs, concalls, presentations, announcements) and web search to produce structured, objective, data-driven output that helps investors assess management quality and governance.\n\n"
 
         "Web search (mandatory):\n"
         "You MUST use the web search tool. Do not rely on training knowledge for company-specific facts.\n"
         "Search for: promoter background and history; board composition and director credentials; "
-        "related party transactions (RPT) from annual reports or BSE/NSE filings; shareholding pledges; "
-        "management commentary on capital allocation, execution, and vision from concalls or investor presentations. "
-        "Base the section on search results. Cite sources with inline Markdown links where possible.\n\n"
+        "related party transactions (RPT) from annual reports or BSE/NSE filings; shareholding pledges. "
+        "For governance_news only: search strictly for governance-related developments (see below). "
+        "Base the output on search results.\n\n"
 
-        "Output format:\n"
-        "Strictly Markdown. Use ## for main section headings. Use **bold** for labels and key terms. "
-        "Keep paragraphs concise; use bullet lists where appropriate. If data is thin for a subsection, say so explicitly.\n\n"
+        "Output format: Return ONLY a single JSON object (no markdown, no code fences, no preamble). "
+        "The JSON must have exactly these keys:\n\n"
 
-        "Required structure (cover each subsection; write \"Not available\" or \"Data not found\" only when search and inputs yield nothing):\n\n"
+        "1. \"people\" (array of objects): One entry per promoter, key executive, or board member. "
+        "Each object: \"name\" (string), \"designation\" (string, e.g. Promoter, MD, Independent Director), "
+        "\"description\" (string, 1–3 sentences: background, expertise, tenure, other roles, reputation). "
+        "Include promoters and board members; keep list focused (typically 5–12 people).\n\n"
 
-        "## Promoter & Board\n"
-        "Promoter background (experience, other ventures, reputation). Board strength: composition, independent directors, "
-        "credibility and relevant expertise. Any governance red flags or positive signals (e.g. board diversity, committees).\n\n"
+        "2. \"governance_news\" (array of objects): STRICTLY governance-only news from the last 1 year only (from today, back 12 months). "
+        "Include ONLY items that are clearly about governance: board composition changes, independent director appointments/resignations, "
+        "audit committee or other board committee changes, SEBI/regulatory actions on governance, governance awards or ratings, "
+        "related-party or disclosure violations, auditor changes, shareholder voting on governance, ESG governance disclosures. "
+        "EXCLUDE: general business news, earnings, product launches, capacity, orders, sector trends, stock price, or any non-governance item. "
+        "Each object: \"text\" (string, short headline or 1-sentence summary; include date or recency if possible), "
+        "\"sentiment\" (string, exactly one of: \"positive\", \"negative\", \"neutral\"). "
+        "Use positive for e.g. board diversity, governance awards, clean disclosures; negative for regulatory action, violations; neutral for routine appointments. "
+        "Include up to 5–8 items; if none in the last 12 months, use empty array.\n\n"
 
-        "## Related Party Transactions\n"
-        "Summary of material RPTs (nature, amounts or scale if available). Whether they are at arm's length; "
-        "any concerns or auditor/regulatory observations. If no material RPTs, state that clearly.\n\n"
+        "3. \"rpt_and_gaps\" (string): Short Markdown paragraph(s) covering: (a) Related party transactions summary (material RPTs, arm's length, any concerns); "
+        "(b) Gaps & assumptions if you had to infer anything or lacked data. If nothing to add, use empty string.\n\n"
 
-        "At the end, add a short **Gaps & assumptions** line if you had to infer anything or lacked data for any subsection.\n"
+        "Example shape:\n"
+        '{"people": [{"name": "...", "designation": "...", "description": "..."}], '
+        '"governance_news": [{"text": "...", "sentiment": "positive"}], "rpt_and_gaps": "..."}\n\n'
     ) + _reference_date_context() + _WEB_SEARCH_INSTRUCTION
 
     user = (
         f"Company: {company_name} (symbol: {symbol}).\n\n"
         f"Meta (company/financial context): {_serialize(meta)}\n\n"
         f"Shareholding pattern (quarterly): {_serialize(shareholding)}\n\n"
-        "Using the above and mandatory web search: write the full Management & Governance section in the required structure. "
-        "Cover: Promoter & Board; Execution, vision & capital allocation; Shareholding trends & pledges; Related party transactions. "
-        "Be objective and data-driven; highlight gaps or assumptions at the end."
+        "Using the above and mandatory web search: return the single JSON object with people, governance_news, and rpt_and_gaps. "
+        "Be objective and data-driven."
     )
     return system, user
 
@@ -331,7 +339,18 @@ def trend_insight_prompt(company_name: str, symbol: str, five_year_table_text: s
     return system, user
 
 
+def _last_5_fy() -> list[str]:
+    """Return the last 5 Indian financial years (most recent first), e.g. ['FY25', 'FY24', 'FY23', 'FY22', 'FY21'].
+    Indian FY runs 1 Apr – 31 Mar; FY25 = year ending March 2025.
+    """
+    today = date.today()
+    m, y = today.month, today.year
+    end_year = y if m <= 3 else y + 1  # FY end year
+    return [f"FY{str(end_year - i)[2:]}" for i in range(5)]
+
+
 def auditor_flags_prompt(company_name: str, symbol: str, exchange: str) -> tuple[str, str]:
+    fy_list = ", ".join(_last_5_fy())
     system = """You are an expert equity research analyst and forensic accountant specializing in audit quality for Indian listed companies.
 
 **CRITICAL: You MUST use web search to find real, current data.** Do not rely on internal knowledge or generalisations. Search BSE/NSE filings, annual reports, company websites, Screener.in, Trendlyne, MoneyControl, and financial news for this specific company. If you cannot find recent information via search, say so explicitly.
@@ -345,47 +364,44 @@ Your task: Identify ALL auditor qualifications, emphasis of matter, going concer
 4. Search: "{company} auditor change", "{company} auditor resignation"
 5. Look at BSE/NSE disclosure filings, latest annual report PDFs or summaries, and investor forums
 
-**For each finding document:**
-- **FY** (e.g. FY24, FY25)
-- **Type:** Qualified Opinion / Emphasis of Matter / Going Concern / CARO Qualification / Secretarial Audit / Auditor Resignation / Other
-- **Issue:** Exact nature of the qualification
-- **Management response** (if available)
-- **Status:** Resolved / Recurring / Pending
-- **Financial impact** (if quantifiable)
+**Cover only these 5 financial years (most recent first):** """ + fy_list + """
 
-**Also flag:** Auditor changes (especially Big-4 → small firm or resignation), filing delays, restatements, related-party concerns raised by auditor.
+**For each finding:**
+- **date** (string): For ordering. Use YYYY-MM when known (e.g. audit report date or FY year-end March → 2025-03). If only year is known use YYYY (e.g. 2024). Indian FY year-end is March (e.g. FY25 → 2025-03).
+- **fy** (string): Display label, e.g. FY25.
+- **type** (string): Exactly one of: Qualified Opinion, Emphasis of Matter, Going Concern, CARO, Secretarial Audit, Auditor Change, Other.
+- **issue** (string): One short line; be concise.
+- **is_red_flag** (boolean): true for qualifications, going concern, auditor resignation, filing delays, restatements, or other serious concerns; false for routine emphasis of matter or clean items.
+- **status** (string, optional): Resolved, Recurring, or Pending.
+- **management_response** (string, optional): One line if available.
 
-**OUTPUT FORMAT: Use Markdown only.** No HTML, no code blocks. Structure your response as follows:
+**OUTPUT FORMAT: Return a single JSON object only.** No markdown, no code fences, no text outside the JSON.
 
-- Start with a one-line **summary** (e.g. "3 qualifications found (FY22–FY25) — 1 recurring, 1 pending" or "Clean audit opinions — no qualifications in last 5 years").
-- Then use **headings** (##) for each finding or a single "Clean opinion" section.
-- Use **bold** for labels (Issue:, Management response:, Status:, etc.), bullet lists, and short paragraphs.
-- If you find no qualifications after searching, say so clearly and note that you searched (e.g. "No auditor qualifications found in searched sources for the last 5 years.").
+Schema:
+{
+  "summary": "One line, e.g. '3 qualifications (FY22–FY25); 1 recurring, 1 pending' or 'Clean opinions — no qualifications in last 5 years.'",
+  "events": [
+    {
+      "date": "2025-03",
+      "fy": "FY25",
+      "type": "Qualified Opinion",
+      "issue": "Short description of the qualification.",
+      "is_red_flag": true,
+      "status": "Pending",
+      "management_response": "Optional one line."
+    }
+  ]
+}
 
-Example structure when issues exist:
-
-## Summary
-⚠ 2 qualifications (FY24–FY25); 1 recurring.
-
-## FY25 — Qualified Opinion (Pending)
-- **Issue:** ...
-- **Management response:** ...
-- **Status:** Pending
-
-## FY24 — Emphasis of Matter (Recurring)
-- **Issue:** ...
-- **Status:** Recurring
-
-## Overall
-Brief assessment.
-
-If no issues: a short "Clean opinions" section in markdown is enough.""" + _reference_date_context()
+- List events in **descending** order by date (most recent first).
+- If no qualifications are found after searching, return events: [] and summary explaining that you searched and found none.
+- Keep issue and management_response to one short line each.""" + _reference_date_context()
 
     user = (
         f"Company: **{company_name}** (Symbol: {symbol}, Exchange: {exchange}).\n\n"
         "Use web search to find and document all auditor qualifications, emphasis of matter, going concern opinions, "
         "CARO qualifications, secretarial audit observations, and auditor changes for the last 5 years. "
-        "Cite what you find from search results; do not invent. Return your answer in Markdown only (no HTML, no code fences)."
+        f"Cover only: {fy_list}. Return a single JSON object with summary and events (descending by date). Do not invent; cite search results."
     )
     return system, user
 

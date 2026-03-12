@@ -134,6 +134,75 @@ def _escape_html(s: str) -> str:
     )
 
 
+_TYPE_TO_BADGE = {
+    "qualified opinion": "audit-timeline-badge--qualified",
+    "emphasis of matter": "audit-timeline-badge--emphasis",
+    "going concern": "audit-timeline-badge--going-concern",
+    "caro": "audit-timeline-badge--caro",
+    "secretarial audit": "audit-timeline-badge--secretarial",
+    "auditor change": "audit-timeline-badge--auditor-change",
+}
+_MONTHS = ("", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def _auditor_timeline_to_html(structured: dict | None) -> str:
+    """Build timeline HTML from auditor_flags_structured (summary + events, sorted desc)."""
+    if not structured or not isinstance(structured, dict):
+        return ""
+    events = structured.get("events")
+    if not isinstance(events, list) or not events:
+        summary = (structured.get("summary") or "").strip()
+        if summary:
+            return f'<div class="audit-timeline audit-timeline--empty"><p class="audit-timeline-summary">{_escape_html(summary)}</p></div>'
+        return ""
+
+    summary = (structured.get("summary") or "").strip()
+    parts = []
+    if summary:
+        parts.append(f'<p class="audit-timeline-summary">{_escape_html(summary)}</p>')
+    parts.append('<div class="audit-timeline">')
+    for ev in events:
+        if not isinstance(ev, dict):
+            continue
+        date_val = ev.get("date") or ""
+        fy = _escape_html(str(ev.get("fy") or ""))
+        typ = str(ev.get("type") or "Other").strip().lower()
+        badge_class = _TYPE_TO_BADGE.get(typ, "audit-timeline-badge--other")
+        issue = _escape_html(str(ev.get("issue") or ""))
+        is_red = ev.get("is_red_flag") is True
+        status = (ev.get("status") or "").strip()
+        mgmt = (ev.get("management_response") or "").strip()
+
+        date_label = fy
+        if date_val and len(date_val) >= 7 and date_val[4] == "-":
+            try:
+                y, m = date_val[:4], date_val[5:7]
+                mi = int(m)
+                if 1 <= mi <= 12:
+                    date_label = f"{fy} · {_MONTHS[mi]} {y}"
+            except (ValueError, IndexError):
+                pass
+        elif date_val and len(date_val) == 4:
+            date_label = f"{fy} · {date_val}"
+
+        item_class = "audit-timeline-item"
+        if is_red:
+            item_class += " audit-timeline-item--red-flag"
+        parts.append(f'<div class="{item_class}">')
+        parts.append(f'<div class="audit-timeline-item-header">')
+        parts.append(f'<span class="audit-timeline-date">{_escape_html(date_label)}</span>')
+        parts.append(f'<span class="audit-timeline-badge {badge_class}">{_escape_html(str(ev.get("type") or "Other"))}</span>')
+        if status:
+            parts.append(f'<span class="audit-timeline-status">{_escape_html(status)}</span>')
+        parts.append("</div>")
+        parts.append(f'<p class="audit-timeline-issue">{issue}</p>')
+        if mgmt:
+            parts.append(f'<p class="audit-timeline-mgmt">{_escape_html(mgmt)}</p>')
+        parts.append("</div>")
+    parts.append("</div>")
+    return "\n".join(parts)
+
+
 def _concall_to_html(concall: dict | None) -> str:
     """Turn structured concall object into simple HTML for PDF."""
     if not concall or not isinstance(concall, dict):
@@ -219,8 +288,14 @@ def payload_to_template_context(payload: dict) -> dict[str, Any]:
             else _markdown_to_html(payload.get("company_overview") or "")
         ),
         "management_research": _markdown_to_html(payload.get("management_research") or ""),
+        "management_people": payload.get("management_people") if isinstance(payload.get("management_people"), list) else [],
+        "management_governance_news": payload.get("management_governance_news") if isinstance(payload.get("management_governance_news"), list) else [],
         "financial_risk": _text_to_html(payload.get("financial_risk") or ""),
-        "auditor_flags": _markdown_to_html(payload.get("auditor_flags") or "") if payload.get("auditor_flags") else None,
+        "auditor_flags": (
+            _auditor_timeline_to_html(payload.get("auditor_flags_structured"))
+            if payload.get("auditor_flags_structured")
+            else (_markdown_to_html(payload.get("auditor_flags") or "") if payload.get("auditor_flags") else None)
+        ),
         "financial_ratios": financials.get("ratios") or [],
         "financial_scorecard": financial_scorecard,
         "five_year_trend": five_year_trend,
