@@ -113,6 +113,9 @@ def fetch_yearly_financials(
         pat = _value_from_screener_df(pl, col, "Net Profit", "Net Profit +")
         pat_cr = round(pat, 2) if pat is not None else None
         eps_val = _value_from_screener_df(pl, col, "EPS in Rs", "EPS")
+        # NPA % (banks/NBFCs; optional)
+        gross_npa_pct = _value_from_screener_df(pl, col, "Gross NPA %")
+        net_npa_pct = _value_from_screener_df(pl, col, "Net NPA %")
 
         cfo_cr = None
         if cf is not None and col_cf and col_cf in cf_cols:
@@ -149,6 +152,8 @@ def fetch_yearly_financials(
             "roe": roe,
             "roce": roce,
             "eps": round(eps_val, 2) if eps_val is not None else None,
+            "gross_npa_pct": round(gross_npa_pct, 2) if gross_npa_pct is not None else None,
+            "net_npa_pct": round(net_npa_pct, 2) if net_npa_pct is not None else None,
             "revenue_yoy_pct": None,
             "ebitda_yoy_pct": None,
             "pat_yoy_pct": None,
@@ -183,6 +188,8 @@ def fetch_yearly_financials(
     ttm_op = _value_from_screener_df(pl, ttm_col, "Operating Profit", "Profit before tax", "Financing Profit")
     ttm_pat = _value_from_screener_df(pl, ttm_col, "Net Profit", "Net Profit +")
     ttm_eps = _value_from_screener_df(pl, ttm_col, "EPS in Rs", "EPS")
+    ttm_gross_npa = _value_from_screener_df(pl, ttm_col, "Gross NPA %")
+    ttm_net_npa = _value_from_screener_df(pl, ttm_col, "Net NPA %")
     ttm_equity = None
     ttm_debt = None
     if bs is not None and latest_bs_col:
@@ -217,6 +224,8 @@ def fetch_yearly_financials(
         "roe": ttm_roe,
         "roce": ttm_roce,
         "eps": round(ttm_eps, 2) if ttm_eps is not None else None,
+        "gross_npa_pct": round(ttm_gross_npa, 2) if ttm_gross_npa is not None else None,
+        "net_npa_pct": round(ttm_net_npa, 2) if ttm_net_npa is not None else None,
         "revenue_yoy_pct": None,
         "ebitda_yoy_pct": None,
         "pat_yoy_pct": None,
