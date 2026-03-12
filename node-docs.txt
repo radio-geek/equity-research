@@ -4,6 +4,28 @@ EQUITY RESEARCH PIPELINE — NODE IMPLEMENTATION DOCS
 Maintained across sessions. Add a new section per node as it is implemented.
 --------------------------------------------------------------------------------
 
+STRUCTURED OUTPUTS (LLM)
+------------------------
+Where the pipeline expects structured JSON from the LLM, we use Pydantic schemas
+and structured-output APIs for reliable typing and validation.
+
+- Schemas: src/nodes/schemas.py — CompanyOverviewStructured, ManagementStructured,
+  SectoralStructured, AuditorFlagsStructured (and nested models).
+- Invoke: src/nodes/prompts.py → invoke_llm_structured(system, user, response_format, ...).
+  - With web search (Responses API): tries client.responses.parse(text_format=PydanticModel);
+    on failure or refusal, falls back to create + model_validate_json.
+  - Without web search: LangChain get_llm(tools=None).with_structured_output(
+    response_format, method="json_schema").invoke(messages).
+- References: OpenAI structured outputs (response_format / text format),
+  LangChain with_structured_output(PydanticModel, method="json_schema").
+
+Nodes using structured invoke + Pydantic: company_overview, management, sectoral,
+auditor_flags. concall_evaluator keeps invoke_llm + manual JSON parse because its
+output is a discriminated union (mainboard_concall | sme_updates | no_concall_updates)
+which is not a single root object schema.
+
+--------------------------------------------------------------------------------
+
 ================================================================================
 NODE: concall_evaluator
 File: src/nodes/concall_evaluator.py
@@ -195,6 +217,7 @@ KNOWN LIMITATIONS / FUTURE IMPROVEMENTS
 NODE: auditor_flags
 File: src/nodes/auditor_flags.py
 Prompt: src/nodes/prompts.py → auditor_flags_prompt(), _last_5_fy()
+Schema: src/nodes/schemas.py → AuditorFlagsStructured. Invoke: invoke_llm_structured(..., AuditorFlagsStructured).
 Report: src/report/templates/base.html (section: "⚠ Auditor Flags & Qualifications")
          backend/pdf_render.py: _auditor_timeline_to_html() when auditor_flags_structured
          present; else _markdown_to_html(auditor_flags). Timeline: descending by date,
@@ -256,6 +279,7 @@ KNOWN LIMITATIONS / FUTURE IMPROVEMENTS
 NODE: company_overview
 File: src/nodes/company_overview.py
 Prompt: src/nodes/prompts.py → company_overview_structured_prompt()
+Schema: src/nodes/schemas.py → CompanyOverviewStructured. Invoke: invoke_llm_structured(..., CompanyOverviewStructured).
 Report: src/report/templates/base.html (section: "Company Overview")
          backend/pdf_render.py: _company_overview_structured_to_html() when structured
          present; else _markdown_to_html(company_overview)
@@ -322,6 +346,7 @@ KNOWN LIMITATIONS / FUTURE IMPROVEMENTS
 NODE: management (Management & Governance)
 File: src/nodes/management.py
 Prompt: src/nodes/prompts.py → management_prompt()
+Schema: src/nodes/schemas.py → ManagementStructured. Invoke: invoke_llm_structured(..., ManagementStructured).
 Report: src/report/templates/base.html (section: "Management & Governance")
         backend/pdf_render.py: passes management_people, management_governance_news to
         template; management_research (rpt_and_gaps) as markdown → HTML
@@ -392,6 +417,7 @@ KNOWN LIMITATIONS / FUTURE IMPROVEMENTS
 NODE: sectoral
 File: src/nodes/sectoral.py
 Prompt: src/nodes/prompts.py → sectoral_prompt()
+Schema: src/nodes/schemas.py → SectoralStructured. Invoke: invoke_llm_structured(..., SectoralStructured).
 Report: src/report/templates/base.html (section: "Sectoral Headwinds & Tailwinds")
         backend/pdf_render.py → sectoral_intro, sectoral_tailwinds_html, sectoral_headwinds_html
         src/report/styles.css → .sectoral-two-col, .sectoral-tailwinds, .sectoral-headwinds
@@ -456,9 +482,9 @@ Report: src/report/templates/base.html — Financial Strength Scorecard, 5-Year 
 
 WHAT THIS NODE DOES
 --------------------
-1. Fetches yearly + TTM metrics from Screener.in (scraped; URL https://www.screener.in/company/{symbol}/consolidated/) and TTM statements (P&L TTM column + latest BS).
+1. Fetches yearly + TTM metrics from Screener.in (scraped; URL https://www.screener.in/company/{symbol}/consolidated/) and TTM statements (P&L TTM column + latest BS). Parsing supports two layouts: standard (Sales, Operating Profit, Net Profit; Borrowings) and bank/financial (Revenue +, Profit before tax/Financing Profit, Net Profit +; Borrowing). Table detection and row-key fallbacks in src/data/screener_scraper.py and src/data/yearly_financials.py.
 2. Builds Financial Strength Scorecard (6 signals: revenue growth >10%, profit growth > revenue growth, ROE >15%, D/E <0.5, positive TTM OCF, margins stable/improving). Score 0–6, verdict text, verdict_tier (strong|average|weak), letter_grade (A/B/C/D/F). Report card UI: prominent grade + verdict + metric rows with Pass/Needs improvement.
-3. Builds 5-Year Financial Trend table (latest 5 years + TTM column from Screener): Revenue, Revenue Growth %, PAT, PAT Growth %, EPS, EBITDA Margin %, NPM %, Debt, D/E, OCF (TTM = —), FCF. ROE and ROCE removed from table; shown in initial tiles from Screener ratios table (TTM/latest).
+3. Builds 5-Year Financial Trend table (latest 5 years + TTM column from Screener): Revenue, Revenue Growth %, PAT, PAT Growth %, EPS, EBITDA Margin %, NPM %, Debt, D/E, Gross NPA %, Net NPA % (if available), OCF (TTM = —). ROE and ROCE removed from table; shown in initial tiles from Screener ratios table (TTM/latest).
 4. Generates 2–3 line trend insight via LLM from the 5-year table.
 5. Optionally generates good/bad balance sheet highlights from TTM statements via LLM.
 
@@ -473,7 +499,7 @@ Uses same fetched (Screener) values. ROE and Debt/Equity prefer TTM when availab
 
 5-YEAR TABLE (financial_evaluation.build_five_year_trend_table)
 -----------------------------------------------------------------
-Includes last 5 year rows + TTM column. Rows: Revenue, Revenue Growth, PAT, PAT Growth, EPS, EBITDA Margin, NPM, Debt, Debt/Equity, Operating Cash Flow (TTM cell = —), Free Cash Flow. ROE and ROCE omitted; TTM ROE/ROCE come from Screener ratios table and are shown in initial tiles. All monetary in Crores.
+Includes last 5 year rows + TTM column. Rows: Revenue, Revenue Growth, PAT, PAT Growth, EPS, EBITDA Margin, NPM, Debt, Debt/Equity, Gross NPA %, Net NPA % (if available, e.g. banks), Operating Cash Flow (TTM cell = —). ROE and ROCE omitted; TTM ROE/ROCE come from Screener ratios table and are shown in initial tiles. All monetary in Crores.
 
 CSS / REPORT
 -------------

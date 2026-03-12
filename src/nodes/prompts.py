@@ -4,14 +4,18 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import date
-from typing import Any
+from typing import Any, TypeVar
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from pydantic import BaseModel
 
 from src.config import get_llm, get_openai_api_key, get_openai_model, get_tavily_api_key
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T", bound=BaseModel)
 
 
 def _invoke_openai_responses_web_search(system: str, user_content: str) -> str | None:
@@ -30,6 +34,92 @@ def _invoke_openai_responses_web_search(system: str, user_content: str) -> str |
     except Exception as e:
         logger.debug("OpenAI Responses API web search failed: %s", e)
         return None
+
+
+def _strip_json_preamble(text: str) -> str:
+    """Strip markdown code fences and any non-JSON preamble before first '{'."""
+    text = (text or "").strip()
+    text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.MULTILINE)
+    text = re.sub(r"\s*```\s*$", "", text, flags=re.MULTILINE)
+    idx = text.find("{")
+    if idx > 0:
+        text = text[idx:]
+    return text.strip()
+
+
+def invoke_llm_structured(
+    system: str,
+    user_content: str,
+    response_format: type[T],
+    use_web_search: bool = False,
+    use_tavily_only: bool = False,
+) -> T | None:
+    """Call LLM and return parsed structured output matching the Pydantic schema.
+
+    Uses OpenAI structured outputs when possible:
+    - With web search (Responses API): tries responses.parse(text_format=response_format);
+      falls back to create + Pydantic parse if parse fails or refuses.
+    - Without web search: uses LangChain with_structured_output(response_format, method="json_schema").
+
+    When use_tavily_only=True, web search uses Tavily via LangChain tools; structured output
+    is not supported on that path, so we fall back to invoke_llm + manual Pydantic parse.
+    """
+    # Path 1: Web search via Responses API (no Tavily) — try native structured output
+    if use_web_search and not use_tavily_only:
+        try:
+            from openai import OpenAI
+            client = OpenAI(api_key=get_openai_api_key())
+            # Input as message list per Responses API; some models support text_format + tools together
+            input_messages = [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_content},
+            ]
+            response = client.responses.parse(
+                model=get_openai_model(),
+                input=input_messages,
+                text_format=response_format,
+                tools=[{"type": "web_search_preview", "search_context_size": "high"}],
+                max_output_tokens=16000,
+            )
+            parsed = getattr(response, "output_parsed", None)
+            if parsed is not None and isinstance(parsed, response_format):
+                return parsed
+            # Refusal or incomplete: fall back to raw output + parse
+            raw = getattr(response, "output_text", None) or ""
+        except Exception as e:
+            logger.debug("OpenAI responses.parse (structured) failed: %s; falling back to create + parse", e)
+            raw = _invoke_openai_responses_web_search(system, user_content)
+        if raw:
+            stripped = _strip_json_preamble(raw)
+            try:
+                return response_format.model_validate_json(stripped)
+            except Exception as e:
+                logger.warning("Structured fallback Pydantic parse failed: %s", e)
+        return None
+
+    # Path 2: Tavily-only or tool-based search — no native structured output; get text then parse
+    if use_web_search or use_tavily_only:
+        raw = invoke_llm(system, user_content, use_web_search=use_web_search, use_tavily_only=use_tavily_only)
+        if not raw:
+            return None
+        stripped = _strip_json_preamble(raw)
+        try:
+            return response_format.model_validate_json(stripped)
+        except Exception as e:
+            logger.warning("Structured Pydantic parse after invoke_llm failed: %s", e)
+        return None
+
+    # Path 3: No web search — LangChain with_structured_output (OpenAI json_schema under the hood)
+    try:
+        llm = get_llm(tools=None)
+        structured_llm = llm.with_structured_output(response_format, method="json_schema")
+        messages = [SystemMessage(content=system), HumanMessage(content=user_content)]
+        result = structured_llm.invoke(messages)
+        if result is not None and isinstance(result, response_format):
+            return result
+    except Exception as e:
+        logger.warning("LangChain with_structured_output failed: %s", e)
+    return None
 
 
 def _get_web_search_tools() -> list:

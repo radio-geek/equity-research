@@ -2,24 +2,16 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 from typing import Any
 
 from src.state import ResearchState
 
-from .prompts import auditor_flags_prompt, invoke_llm
+from .prompts import auditor_flags_prompt, invoke_llm_structured
+from .schemas import AuditorFlagsStructured, AuditorEvent
 
 logger = logging.getLogger(__name__)
-
-
-def _strip_json_fences(text: str) -> str:
-    """Strip optional code fences and leading/trailing junk from LLM JSON output."""
-    text = text.strip()
-    text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.MULTILINE)
-    text = re.sub(r"\s*```\s*$", "", text, flags=re.MULTILINE)
-    return text.strip()
 
 
 def _normalize_event_date(event: dict[str, Any]) -> str:
@@ -47,6 +39,11 @@ def _sort_events_desc(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return events
 
 
+def _event_to_dict(e: AuditorEvent) -> dict[str, Any]:
+    """Convert Pydantic event to dict for sorting and report payload."""
+    return {"date": e.date, "fy": e.fy, "description": e.description}
+
+
 def auditor_flags(state: ResearchState) -> dict[str, Any]:
     """Search for auditor qualifications; return structured timeline (summary + events) and summary string."""
     company_name = state.get("company_name") or state.get("symbol") or ""
@@ -56,28 +53,17 @@ def auditor_flags(state: ResearchState) -> dict[str, Any]:
     logger.info("auditor_flags: starting for %s (%s)", symbol, exchange)
 
     system, user = auditor_flags_prompt(company_name, symbol, exchange)
-
     logger.debug("auditor_flags: invoking LLM with web search")
-    raw = invoke_llm(system, user, use_web_search=True)
-    logger.debug("auditor_flags: raw LLM output length=%d chars", len(raw))
+    parsed = invoke_llm_structured(system, user, AuditorFlagsStructured, use_web_search=True)
+    logger.debug("auditor_flags: structured invoke returned %s", "ok" if parsed else "None")
 
-    raw = _strip_json_fences(raw)
     summary = ""
     events: list[dict[str, Any]] = []
 
-    try:
-        data = json.loads(raw)
-        if isinstance(data, dict):
-            summary = (data.get("summary") or "").strip()
-            raw_events = data.get("events")
-            if isinstance(raw_events, list):
-                events = [e for e in raw_events if isinstance(e, dict)]
-                events = _sort_events_desc(events)
-    except (json.JSONDecodeError, TypeError) as e:
-        logger.warning("auditor_flags: JSON parse failed, using fallback summary: %s", e)
-        summary = "Auditor report data could not be parsed; raw response may be in report."
-        if raw and len(raw) < 2000:
-            summary = raw[:1500].strip()
+    if parsed:
+        summary = (parsed.summary or "").strip()
+        events = [_event_to_dict(e) for e in parsed.events]
+        events = _sort_events_desc(events)
 
     if not summary and events:
         summary = f"{len(events)} audit-related event(s) in the last 5 years."

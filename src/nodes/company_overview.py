@@ -2,66 +2,48 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import re
 from typing import Any
 
 from src.state import ResearchState
 
-from .prompts import company_overview_structured_prompt, invoke_llm
+from .prompts import company_overview_structured_prompt, invoke_llm_structured
+from .schemas import CompanyOverviewStructured
 
 logger = logging.getLogger(__name__)
 
 
-def _strip_json_preamble(text: str) -> str:
-    """Strip markdown code fences and any non-JSON preamble."""
-    text = text.strip()
-    text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.MULTILINE)
-    text = re.sub(r"\s*```\s*$", "", text, flags=re.MULTILINE)
-    idx = text.find("{")
-    if idx > 0:
-        logger.debug("company_overview: stripping %d chars of preamble before first {", idx)
-        text = text[idx:]
-    return text.strip()
-
-
-def _validate_company_overview_shape(data: dict) -> bool:
-    """Check minimal required keys for structured company overview."""
-    if not isinstance(data, dict):
-        return False
-    if not data.get("opening") or not isinstance(data["opening"], str):
-        return False
-    vc = data.get("value_chain")
-    if not isinstance(vc, dict) or "stages" not in vc:
-        return False
-    if not isinstance(vc.get("stages"), list):
-        return False
-    if not vc.get("company_position") and not vc.get("company_position_description"):
-        return False
-    bmt = data.get("business_model_table")
-    if not isinstance(bmt, dict):
-        return False
-    if "rows" not in bmt or not isinstance(bmt["rows"], list):
-        return False
-    if not isinstance(data.get("key_products"), list):
-        return False
-    if not isinstance(data.get("recent_developments"), list):
-        return False
-    return True
-
-
-def _summary_from_structured(data: dict) -> str:
+def _summary_from_structured(data: CompanyOverviewStructured) -> str:
     """Build a short string summary for aggregate and PDF fallback."""
-    parts = [data.get("opening") or ""]
-    vc = data.get("value_chain") or {}
-    desc = vc.get("company_position_description")
-    pos = vc.get("company_position")
-    if desc:
-        parts.append(f"Value chain: {desc}")
-    elif pos:
-        parts.append(f"Value chain position: {pos}")
+    parts = [data.opening or ""]
+    vc = data.value_chain
+    if vc.company_position_description:
+        parts.append(f"Value chain: {vc.company_position_description}")
+    elif vc.company_position:
+        parts.append(f"Value chain position: {vc.company_position}")
     return "\n\n".join(p for p in parts if p).strip()
+
+
+def _structured_to_payload(data: CompanyOverviewStructured) -> dict[str, Any]:
+    """Convert Pydantic model to report payload (dict) for state and templates."""
+    vc = data.value_chain
+    return {
+        "opening": data.opening,
+        "value_chain": {
+            "stages": vc.stages,
+            "company_stage_indices": vc.company_stage_indices,
+            "company_position_description": vc.company_position_description,
+            "company_position": vc.company_position,
+        },
+        "business_model_table": {
+            "rows": [
+                {"segment": r.segment, "importance": r.importance, "description": r.description}
+                for r in data.business_model_table.rows
+            ],
+        },
+        "key_products": data.key_products,
+        "recent_developments": [{"year": rd.year, "event": rd.event} for rd in data.recent_developments],
+    }
 
 
 def company_overview(state: ResearchState) -> dict[str, Any]:
@@ -72,26 +54,20 @@ def company_overview(state: ResearchState) -> dict[str, Any]:
     meta = state.get("meta") or {}
     quote = state.get("quote") or {}
     system, user = company_overview_structured_prompt(company_name, symbol, meta, quote)
-    raw = invoke_llm(system, user, use_web_search=True, use_tavily_only=False)
-    logger.debug("company_overview: raw LLM output length=%d chars", len(raw or ""))
+    parsed = invoke_llm_structured(
+        system, user, CompanyOverviewStructured, use_web_search=True, use_tavily_only=False
+    )
+    logger.debug("company_overview: structured invoke returned %s", "ok" if parsed else "None")
 
     company_overview_structured = None
     company_overview = ""
 
-    if raw:
-        stripped = _strip_json_preamble(raw)
-        try:
-            data = json.loads(stripped)
-            if _validate_company_overview_shape(data):
-                company_overview_structured = data
-                company_overview = _summary_from_structured(data)
-                logger.info("company_overview: done for %s (structured)", symbol)
-            else:
-                logger.warning("company_overview: parsed JSON failed shape validation")
-                company_overview = raw[:4000] if len(raw) > 4000 else raw
-        except json.JSONDecodeError as e:
-            logger.warning("company_overview: JSON parse failed: %s", e)
-            company_overview = raw[:4000] if len(raw) > 4000 else raw
+    if parsed:
+        company_overview_structured = _structured_to_payload(parsed)
+        company_overview = _summary_from_structured(parsed)
+        logger.info("company_overview: done for %s (structured)", symbol)
+    else:
+        company_overview = "Overview unavailable."
 
     out: dict[str, Any] = {"company_overview": company_overview or "Overview unavailable."}
     if company_overview_structured is not None:
