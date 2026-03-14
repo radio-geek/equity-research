@@ -44,13 +44,13 @@ const BADGE_LABELS: Record<string, string> = {
   concall: 'Concall',
   'press-release': 'Press release',
   ppt: 'PPT',
-  missing: 'Missing',
+  missing: 'No concall held',
   'sme-concall': 'Concall',
   'sme-board': 'Board letter',
   'sme-ppt': 'PPT',
   'sme-results': 'Results',
   'sme-interview': 'Interview',
-  'sme-missing': 'Missing',
+  'sme-missing': 'No concall held',
 }
 
 const TREND_CLASS: Record<string, { color: string; label: string }> = {

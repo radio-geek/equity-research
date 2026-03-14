@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Any, TypeVar
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -16,6 +16,22 @@ from src.config import get_llm, get_openai_api_key, get_openai_model, get_tavily
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
+
+
+def _nse_date_to_quarter_label(date_str: str) -> str:
+    """Convert an NSE announcement date (e.g. '01-Nov-2024 00:00:00') to Indian quarter label.
+
+    Concalls are held ~6-8 weeks after the quarter ends, so we subtract 7 weeks to get
+    the approximate period-end date, then map that to the Indian quarter.
+    e.g. '01-Nov-2024' -> Sep 2024 -> 'Q2 FY25'
+    """
+    try:
+        from src.data.indian_quarters import calendar_date_to_indian_quarter
+        d = datetime.strptime(date_str.split()[0], "%d-%b-%Y")
+        approx_period_end = d - timedelta(weeks=7)
+        return calendar_date_to_indian_quarter(approx_period_end)
+    except Exception:
+        return date_str
 
 
 def _invoke_openai_responses_web_search(system: str, user_content: str) -> str | None:
@@ -737,22 +753,31 @@ def concall_structured_prompt(
     is_sme = has_transcripts and any(t.get("segment") == "sme" for t in (transcripts or []))
 
     if has_transcripts:
-        # Build transcript block to embed in the prompt
+        # Build transcript block to embed in the prompt, with explicit quarter labels
         transcript_block_parts = []
+        covered_quarters = []
         for i, t in enumerate(transcripts, 1):
             text = (t.get("text") or "").strip()
             if not text:
                 text = "[PDF text could not be extracted]"
+            quarter_label = _nse_date_to_quarter_label(t.get("date", ""))
+            covered_quarters.append(quarter_label)
             transcript_block_parts.append(
-                f"--- TRANSCRIPT {i} | Date: {t.get('date', '')} | Link: {t.get('link', '')} ---\n{text}"
+                f"--- TRANSCRIPT {i} | Quarter: {quarter_label} | Date: {t.get('date', '')} | Link: {t.get('link', '')} ---\n{text}"
             )
         transcript_block = "\n\n".join(transcript_block_parts)
         company_type_hint = "SME_COMPANY" if is_sme else "MAINBOARD_WITH_CONCALLS"
+        covered_str = ", ".join(covered_quarters) if covered_quarters else "none"
         data_source_note = (
             f"You have been provided with {len(transcripts)} actual concall/earnings transcript(s) "
             f"fetched directly from NSE filings. Company type is {company_type_hint}. "
-            "For quarters covered by the provided transcripts, extract data strictly from the transcript text — do not hallucinate. "
-            "For all remaining quarters in the 8-quarter window NOT covered by any transcript, use web search to find the actual concall or filing details."
+            f"These transcripts cover the following quarters: {covered_str}. "
+            "For these quarters, extract data STRICTLY from the provided transcript text — do not web search or hallucinate. "
+            "IMPORTANT: These transcripts represent ALL NSE concall filings found for this company. "
+            "For any quarter in the 8-quarter window NOT in the covered list above, the company did NOT hold a concall. "
+            "Set badge to 'missing' for those quarters. "
+            "You may use web search only to check if a press release or investor presentation exists (use 'press-release' or 'ppt' badge). "
+            "NEVER assign badge 'concall' to a quarter not in the covered list."
         )
     else:
         transcript_block = ""
