@@ -738,6 +738,7 @@ BULLETS — always financial first, then ALL operational highlights found in the
 Cover these 8 quarters (latest first): {quarters_list}
 Badge: "concall" when concall held; "press-release" when only press release; "ppt" when only presentation; "missing" when nothing found.
 Trend in guidanceTable cells: "raised", "cut", "maintained", "neutral".
+In guidanceTable cells, NEVER use "N/A" or leave value blank — if management gave no explicit guidance for that metric in that quarter, set value to "No explicit guidance" and trend to "neutral".
 
 FOR SME_COMPANY or MAINBOARD_NO_CONCALLS use:
 {{
