@@ -843,6 +843,7 @@ BULLETS — always financial first, then ALL operational highlights found in the
 
 Cover these 8 quarters (latest first): {quarters_list}
 Badge: "concall" when concall held; "press-release" when only press release; "ppt" when only presentation; "missing" when nothing found.
+IMPORTANT: If the company was not yet listed on the stock exchange during a quarter (i.e., the IPO/listing happened after that quarter ended), set badge to "missing" for that quarter — even if pre-IPO investor presentations or DRHP-era materials exist. Only NSE/BSE post-listing events qualify for a non-missing badge.
 Trend in guidanceTable cells: "raised", "cut", "maintained", "neutral".
 In guidanceTable cells, NEVER use "N/A" or leave value blank — if management gave no explicit guidance for that metric in that quarter, set value to "No explicit guidance" and trend to "neutral".
 
