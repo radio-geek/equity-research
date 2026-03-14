@@ -148,6 +148,8 @@ export interface ReportPayload {
     five_year_trend?: { headers?: string[]; rows?: Array<{ metric?: string; unit?: string; cells?: string[] }> }
     trend_insight_summary?: string
   }
+  /** Key metrics for report header (Stock P/E, Market Cap, ROCE %, ROE %, Debt/Equity, PAT Margin %, EBITDA Margin %) */
+  key_metrics?: Record<string, string>
   generated_at?: string
 }
 
@@ -205,7 +207,9 @@ export interface ReportView {
   sectoralTailwinds?: string[]
   greenFlags?: string[]
   redFlags?: string[]
-  screenerQuote?: { currentPrice?: number; priceChangePct?: string; marketCap?: string; lastPriceUpdated?: string }
+  screenerQuote?: { currentPrice?: number; priceChangePct?: string; marketCap?: string; stockPe?: number; lastPriceUpdated?: string }
+  /** Key metrics for header strip: pe, market_cap, roce, roe, debt_equity, pat_margin, ebitda_margin */
+  keyMetrics?: Record<string, string>
 }
 
 export function mapReportPayloadToView(payload: ReportPayload | null | undefined): ReportView {
@@ -283,7 +287,13 @@ export function mapReportPayloadToView(payload: ReportPayload | null | undefined
           metrics: financials.financial_scorecard.metrics,
         }
       : undefined,
-    fiveYearTrend: financials.five_year_trend,
+    fiveYearTrend:
+      financials?.five_year_trend && typeof financials.five_year_trend === 'object'
+        ? {
+            headers: Array.isArray(financials.five_year_trend.headers) ? financials.five_year_trend.headers : [],
+            rows: Array.isArray(financials.five_year_trend.rows) ? financials.five_year_trend.rows : [],
+          }
+        : undefined,
     trendInsightSummary: financials.trend_insight_summary ?? undefined,
     sectoralHeadwinds: sectoral.headwinds ?? [],
     sectoralTailwinds: sectoral.tailwinds ?? [],
@@ -296,9 +306,11 @@ export function mapReportPayloadToView(payload: ReportPayload | null | undefined
         currentPrice: sq.current_price,
         priceChangePct: sq.price_change_pct,
         marketCap: sq.market_cap,
+        stockPe: (sq as { stock_pe?: number }).stock_pe,
         lastPriceUpdated: sq.last_price_updated,
       }
     })(),
+    keyMetrics: payload.key_metrics ?? undefined,
   }
 }
 
@@ -325,7 +337,17 @@ export async function getReportPdfBlob(reportId: string): Promise<Blob> {
     clearToken()
     throw new Error('Unauthorized')
   }
-  if (!res.ok) throw new Error(res.statusText)
+  if (!res.ok) {
+    const text = await res.text()
+    let message = res.statusText
+    try {
+      const j = JSON.parse(text) as { detail?: string | { msg?: string } }
+      if (j.detail) message = typeof j.detail === 'string' ? j.detail : (j.detail?.msg ?? res.statusText)
+    } catch {
+      if (text) message = text.slice(0, 200)
+    }
+    throw new Error(message)
+  }
   return res.blob()
 }
 

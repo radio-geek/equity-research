@@ -476,14 +476,14 @@ NODE: qoq_financials (Financial Evaluation)
 File: src/nodes/qoq_financials.py
 Data: src/data/yearly_financials.py (fetch_yearly_financials, get_ttm_statements), state.financial_ratios
 Report helpers: src/report/financial_evaluation.py (scorecard, 5-year table, trend insight)
-Report: src/report/templates/base.html — Financial Strength Scorecard, 5-Year Financial Trend, trend insight, Balance Sheet Highlights
-        backend/pdf_render.py — same sections in HTML and ReportLab fallback
+Report: src/report/templates/base.html — 5-Year Financial Trend, trend insight, Balance Sheet Highlights (Financial Strength Scorecard section removed from report)
+        backend/pdf_render.py — same sections in HTML and ReportLab fallback (no scorecard)
 ================================================================================
 
 WHAT THIS NODE DOES
 --------------------
 1. Fetches yearly + TTM metrics from Screener.in (scraped; URL https://www.screener.in/company/{symbol}/consolidated/) and TTM statements (P&L TTM column + latest BS). Parsing supports two layouts: standard (Sales, Operating Profit, Net Profit; Borrowings) and bank/financial (Revenue +, Profit before tax/Financing Profit, Net Profit +; Borrowing). Table detection and row-key fallbacks in src/data/screener_scraper.py and src/data/yearly_financials.py.
-2. Builds Financial Strength Scorecard (6 signals: revenue growth >10%, profit growth > revenue growth, ROE >15%, D/E <0.5, positive TTM OCF, margins stable/improving). Score 0–6, verdict text, verdict_tier (strong|average|weak), letter_grade (A/B/C/D/F). Report card UI: prominent grade + verdict + metric rows with Pass/Needs improvement.
+2. Builds Financial Strength Scorecard (6 signals: revenue growth >10%, profit growth > revenue growth, ROE >15%, D/E <0.5, positive TTM OCF, margins stable/improving). Score 0–6, verdict text, verdict_tier (strong|average|weak), letter_grade (A/B/C/D/F). Not displayed in report (section removed).
 3. Builds 5-Year Financial Trend table (latest 5 years + TTM column from Screener): Revenue, Revenue Growth %, PAT, PAT Growth %, EPS, EBITDA Margin %, NPM %, Debt, D/E, Gross NPA %, Net NPA % (if available), OCF (TTM = —). ROE and ROCE removed from table; shown in initial tiles from Screener ratios table (TTM/latest).
 4. Generates 2–3 line trend insight via LLM from the 5-year table.
 5. Optionally generates good/bad balance sheet highlights from TTM statements via LLM.
@@ -503,6 +503,6 @@ Includes last 5 year rows + TTM column. Rows: Revenue, Revenue Growth, PAT, PAT 
 
 CSS / REPORT
 -------------
-Scorecard (report card style): .scorecard-card, .scorecard-intro, .scorecard-header, .scorecard-grade-wrap, .scorecard-letter[data-tier], .scorecard-fraction, .scorecard-verdict-wrap, .scorecard-verdict-strong/average/weak, .scorecard-metrics, .scorecard-metric, .scorecard-metric-pass/fail, .scorecard-metric-name/value/signal/badge.
+Scorecard CSS remains in src/report/styles.css but scorecard block is not rendered in template/PDF/frontend.
 .five-year-table, .five-year-unit, .trend-insight
 ================================================================================

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import os
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -203,25 +206,223 @@ def _auditor_timeline_to_html(structured: dict | None) -> str:
     return "\n".join(parts)
 
 
+def _concall_get(d: dict, *keys: str) -> Any:
+    """Get first present key from dict (camelCase or snake_case)."""
+    for k in keys:
+        if k in d and d[k] is not None:
+            return d[k]
+    return None
+
+
 def _concall_to_html(concall: dict | None) -> str:
-    """Turn structured concall object into simple HTML for PDF."""
+    """Turn structured concall object into HTML matching the web ConcallSection (cards, events, capex, guidance, etc.)."""
     if not concall or not isinstance(concall, dict):
         return ""
-    parts = []
-    if concall.get("summary"):
-        parts.append(f"<p><strong>Summary:</strong> {concall['summary']}</p>")
-    cards = concall.get("cards") or []
-    for card in cards[:12]:
-        period = card.get("period", "")
-        bullets = card.get("bullets") or []
-        guidance = card.get("guidance")
-        parts.append(f"<p><strong>{period}</strong></p><ul>")
-        for b in bullets[:5]:
-            parts.append(f"<li>{b}</li>")
-        parts.append("</ul>")
+    parts: list[str] = []
+    ctype = _concall_get(concall, "type", "Type") or ""
+
+    # ---- no_concall_updates: message + investor presentation, order book, press releases ----
+    if ctype == "no_concall_updates":
+        msg = _concall_get(concall, "noConcallMessage", "no_concall_message") or "No concalls held in last 8 quarters"
+        parts.append(
+            f'<div class="no-concall-alerts"><div class="no-concall-alert">⚠ {_escape_html(msg)}</div></div>'
+        )
+        ip = _concall_get(concall, "investorPresentation", "investor_presentation")
+        if isinstance(ip, dict):
+            bullets = ip.get("bullets") or ip.get("Bullets") or []
+            if bullets:
+                period = ip.get("period") or ip.get("Period") or ""
+                link = ip.get("link") or ip.get("Link")
+                parts.append('<div class="capex-section"><h3>Investor Presentation</h3>')
+                if period:
+                    parts.append(f"<p><em>{_escape_html(str(period))}</em></p>")
+                if link:
+                    parts.append(f'<p><a href="{_escape_html(str(link))}">View PPT ↗</a></p>')
+                parts.append("<ul>")
+                for b in bullets[:15]:
+                    parts.append(f"<li>{_markdown_to_html(str(b)).strip() or _escape_html(str(b))}</li>")
+                parts.append("</ul></div>")
+        ob = _concall_get(concall, "orderBook", "order_book")
+        if isinstance(ob, dict):
+            bullets = ob.get("bullets") or ob.get("Bullets") or []
+            if bullets:
+                parts.append("<h3>Order Book &amp; Contracts</h3><ul>")
+                for b in bullets[:15]:
+                    parts.append(f"<li>{_markdown_to_html(str(b)).strip() or _escape_html(str(b))}</li>")
+                parts.append("</ul>")
+        pr = _concall_get(concall, "pressReleases", "press_releases")
+        if isinstance(pr, dict):
+            bullets = pr.get("bullets") or pr.get("Bullets") or []
+            if bullets:
+                parts.append("<h3>Press Releases</h3><ul>")
+                for b in bullets[:15]:
+                    parts.append(f"<li>{_markdown_to_html(str(b)).strip() or _escape_html(str(b))}</li>")
+                parts.append("</ul>")
+        return "\n".join(parts) if parts else ""
+
+    # ---- mainboard_concall / sme_updates: summary, summaryBar, cards, capex, guidanceTable, alerts, sources ----
+    summary = _concall_get(concall, "summary", "Summary")
+    if summary and isinstance(summary, str):
+        parts.append(f'<p class="concall-section-header">{_escape_html(summary)}</p>')
+    summary_bar = _concall_get(concall, "summaryBar", "summary_bar")
+    if isinstance(summary_bar, dict):
+        badge = summary_bar.get("badge") or summary_bar.get("Badge")
+        text = summary_bar.get("text") or summary_bar.get("Text")
+        if text:
+            b = f'<span class="concall-type-badge concall-badge">{_escape_html(str(badge or ""))}</span>' if badge else ""
+            parts.append(f'<p>{b} {_escape_html(str(text))}</p>')
+
+    cards = _concall_get(concall, "cards", "Cards") or []
+    if not isinstance(cards, list):
+        cards = []
+    event_type_labels = {
+        "acquisition": "Acquisition",
+        "fundraise": "Fundraise",
+        "stake_sale": "Stake Sale",
+        "capex": "Capex",
+        "order_win": "Order Win",
+        "mgmt_change": "Mgmt Change",
+        "guidance_change": "Guidance",
+    }
+    badge_class = {
+        "concall": "concall-badge",
+        "press-release": "press-release-badge",
+        "ppt": "ppt-badge",
+        "missing": "missing-badge",
+        "sme-concall": "concall-badge",
+        "sme-board": "ppt-badge",
+        "sme-ppt": "ppt-badge",
+        "sme-results": "press-release-badge",
+        "sme-interview": "ppt-badge",
+        "sme-missing": "missing-badge",
+    }
+    if cards:
+        parts.append('<div class="concall-cards-grid">')
+    for i, card in enumerate(cards[:12]):
+        if not isinstance(card, dict):
+            continue
+        period = _concall_get(card, "period", "Period") or "—"
+        badge = _concall_get(card, "badge", "Badge")
+        link = _concall_get(card, "link", "Link")
+        badge_cl = badge_class.get(str(badge).lower() if badge else "", "ppt-badge")
+        link_html = ""
+        if link:
+            link_html = f' <a href="{_escape_html(str(link))}">View source ↗</a>'
+        parts.append(
+            f'<div class="concall-card concall-card-{(i % 8) + 1}">'
+            f'<div class="concall-card-header">{_escape_html(str(period))}'
+            f'<span class="concall-type-badge {badge_cl}">{_escape_html(str(badge or ""))}</span>{link_html}</div>'
+        )
+        events = _concall_get(card, "events", "Events") or []
+        if isinstance(events, list):
+            for ev in events[:8]:
+                if not isinstance(ev, dict):
+                    continue
+                etype = ev.get("type") or ev.get("Type")
+                headline = ev.get("headline") or ev.get("Headline")
+                details = ev.get("details") or ev.get("Details") or []
+                if headline:
+                    label = event_type_labels.get(str(etype or "").lower(), str(etype or "Event"))
+                    parts.append(f'<p><strong>{_escape_html(str(label))}:</strong> {_escape_html(str(headline))}</p>')
+                for d in details[:5]:
+                    if d:
+                        parts.append(f"<p>• {_escape_html(str(d))}</p>")
+        bullets = _concall_get(card, "bullets", "Bullets") or []
+        if isinstance(bullets, list) and bullets:
+            parts.append("<ul>")
+            for b in bullets[:9]:
+                parts.append(f"<li>{_escape_html(str(b))}</li>")
+            parts.append("</ul>")
+        guidance = _concall_get(card, "guidance", "Guidance")
         if guidance:
-            parts.append(f"<p><em>Guidance: {guidance}</em></p>")
-    return "\n".join(parts) if parts else ""
+            parts.append(f'<p><em>Guidance: {_escape_html(str(guidance))}</em></p>')
+        qa = _concall_get(card, "qaHighlights", "qa_highlights") or []
+        if isinstance(qa, list) and qa:
+            parts.append("<p><strong>Key Q&amp;A</strong></p>")
+            for qa_item in qa[:5]:
+                if isinstance(qa_item, dict):
+                    q = qa_item.get("q") or qa_item.get("Q")
+                    a = qa_item.get("a") or qa_item.get("A")
+                    if q:
+                        parts.append(f"<p><strong>Q:</strong> {_escape_html(str(q))}</p>")
+                    if a:
+                        parts.append(f"<p><strong>A:</strong> {_escape_html(str(a))}</p>")
+        parts.append("</div>")
+    if cards:
+        parts.append("</div>")
+
+    capex_list = _concall_get(concall, "capex", "Capex") or []
+    if isinstance(capex_list, list) and capex_list:
+        parts.append('<div class="capex-section"><h3>Capital expenditure &amp; major developments</h3>')
+        for item in capex_list[:10]:
+            if not isinstance(item, dict):
+                continue
+            project = _concall_get(item, "project", "Project")
+            amount = _concall_get(item, "amount", "Amount")
+            funding = _concall_get(item, "funding", "Funding")
+            desc = _concall_get(item, "description", "Description")
+            if project or desc:
+                parts.append("<div class=\"capex-item\">")
+                if project:
+                    parts.append(f"<strong>{_escape_html(str(project))}</strong>")
+                    if amount:
+                        parts.append(f' <span class="capex-amount">{_escape_html(str(amount))}</span>')
+                    if funding:
+                        parts.append(f'<br><span class="capex-funding">Funding: {_escape_html(str(funding))}</span>')
+                else:
+                    parts.append(_escape_html(str(desc or "")))
+                parts.append("</div>")
+        parts.append("</div>")
+
+    gt = _concall_get(concall, "guidanceTable", "guidance_table")
+    if isinstance(gt, dict):
+        headers = gt.get("headers") or gt.get("Headers") or []
+        rows = gt.get("rows") or gt.get("Rows") or []
+        if headers and rows:
+            parts.append('<div class="guidance-section"><h3>Guidance tracker</h3>')
+            parts.append('<table class="guidance-table"><thead><tr>')
+            for h in headers:
+                parts.append(f"<th>{_escape_html(str(h))}</th>")
+            parts.append("</tr></thead><tbody>")
+            trend_class = {"raised": "guidance-raised", "cut": "guidance-cut", "maintained": "guidance-maintained"}
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                metric = row.get("metric") or row.get("Metric") or "—"
+                cells = row.get("cells") or row.get("Cells") or []
+                parts.append(f"<tr><td>{_escape_html(str(metric))}</td>")
+                for cell in cells:
+                    if isinstance(cell, dict):
+                        val = cell.get("value") or cell.get("Value") or "—"
+                        trend = (cell.get("trend") or cell.get("Trend") or "neutral").lower()
+                        cl = trend_class.get(trend, "")
+                        parts.append(f'<td class="{cl}">{_escape_html(str(val))}</td>')
+                    else:
+                        parts.append(f"<td>{_escape_html(str(cell))}</td>")
+                parts.append("</tr>")
+            parts.append("</tbody></table>")
+            parts.append("<p><small>Green = Raised · Red = Cut · Yellow = Maintained</small></p></div>")
+
+    alerts = _concall_get(concall, "noConcallAlerts", "no_concall_alerts") or []
+    if isinstance(alerts, list) and alerts:
+        parts.append('<div class="no-concall-alerts">')
+        for msg in alerts[:5]:
+            parts.append(f'<div class="no-concall-alert">{_escape_html(str(msg))}</div>')
+        parts.append("</div>")
+
+    sources = _concall_get(concall, "sources", "Sources") or []
+    if isinstance(sources, list) and sources and ctype == "sme_updates":
+        parts.append("<h3>Information sources</h3><ul>")
+        for s in sources[:10]:
+            if isinstance(s, dict):
+                period = s.get("period") or s.get("Period") or ""
+                source = s.get("source") or s.get("Source") or ""
+                parts.append(f"<li><strong>{_escape_html(str(period))}:</strong> {_escape_html(str(source))}</li>")
+            parts.append("</ul>")
+
+    if not parts:
+        return ""
+    return '<div class="concall-section">' + "\n".join(parts) + "</div>"
 
 
 def payload_to_template_context(payload: dict) -> dict[str, Any]:
@@ -263,13 +464,15 @@ def payload_to_template_context(payload: dict) -> dict[str, Any]:
     generated_at = generated_at.replace("T", " ").replace("Z", "")[:16]
 
     from src.report.financial_evaluation import build_key_metrics
-    key_metrics = build_key_metrics(yearly_metrics)
     company = payload.get("company") or {}
     screener_quote = company.get("screener_quote") or {}
+    key_metrics = dict(payload.get("key_metrics") or build_key_metrics(yearly_metrics))
     if screener_quote.get("current_price") is not None:
         key_metrics["current_price"] = str(screener_quote["current_price"])
     if screener_quote.get("market_cap"):
         key_metrics["market_cap"] = str(screener_quote["market_cap"])
+    if screener_quote.get("stock_pe") is not None:
+        key_metrics["pe"] = str(screener_quote["stock_pe"])
     if screener_quote.get("last_price_updated"):
         key_metrics["last_price_updated"] = str(screener_quote["last_price_updated"])
 
@@ -321,372 +524,84 @@ def render_payload_to_html(payload: dict) -> str:
     return template.render(**ctx)
 
 
-def _strip_html_to_plain(html: str | None) -> str:
-    """Replace simple HTML tags with plain text for reportlab."""
-    if html is None:
-        return ""
-    if not isinstance(html, str):
-        html = str(html)
-    s = (
-        html.replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", '"')
-        .replace("<strong>", "").replace("</strong>", "")
-        .replace("<em>", "").replace("</em>", "")
-        .replace("<p>", "\n").replace("</p>", "")
-        .replace("<br>", "\n").replace("<br/>", "\n")
-        .replace("<li>", "• ").replace("</li>", "\n")
-        .replace("<ul>", "\n").replace("</ul>", "\n")
-    )
-    s = re.sub(r"<[^>]+>", "", s)
-    return re.sub(r"\n{3,}", "\n\n", s).strip()
+def _chromium_executable() -> str | None:
+    """Path to minimal Chromium (Sparticuz bundle). Prefer CHROMIUM_PATH env, else /opt/chromium/chromium."""
+    path = os.environ.get("CHROMIUM_PATH")
+    if path and os.path.isfile(path):
+        return path
+    default = "/opt/chromium/chromium"
+    return default if os.path.isfile(default) else None
 
 
-# ReportLab palette (match app)
-_TEAL = "#0f766e"
-_teal_light = "#e6f2f1"
-_green = "#059669"
-_green_light = "#e8f5e9"
-_red = "#dc2626"
-_red_light = "#ffebee"
-_amber = "#d97706"
-_amber_light = "#fffbeb"
-_fg = "#1c1917"
-_muted = "#78716c"
-_surface = "#f5f5f4"
-_surface2 = "#fafaf9"
+def _pdf_playwright(payload: dict) -> bytes | None:
+    """Generate PDF via headless Chromium (Playwright). Uses CHROMIUM_PATH or /opt/chromium when set; else Playwright's installed browser (local dev)."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        return None
+    executable = _chromium_executable()
+    html_content = render_payload_to_html(payload)
+    styles_path = _REPO_ROOT / "src" / "report" / "styles.css"
+    css_content = styles_path.read_text(encoding="utf-8") if styles_path.is_file() else ""
+    launch_kwargs: dict = {"headless": True, "timeout": 15_000}
+    if executable:
+        launch_kwargs["executable_path"] = executable
+        launch_kwargs["args"] = ["--no-sandbox", "--disable-dev-shm-usage", "--single-process"]
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(**launch_kwargs)
+            try:
+                page = browser.new_page()
+                page.set_content(html_content, wait_until="load")
+                if css_content:
+                    page.add_style_tag(content=css_content)
+                pdf_bytes = page.pdf(
+                    format="A4",
+                    margin={"top": "2.2cm", "right": "2cm", "bottom": "2.2cm", "left": "2cm"},
+                    print_background=True,
+                )
+                return pdf_bytes
+            finally:
+                browser.close()
+    except Exception:
+        raise  # let caller log (outside _suppress_stderr) so the message is visible
 
 
-def _pdf_fallback_reportlab(payload: dict) -> bytes:
-    """Generate a styled PDF with reportlab (pure Python). Used when WeasyPrint system libs are missing."""
-    from io import BytesIO
-    from reportlab.lib import colors
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-    from reportlab.lib.units import cm
-    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
-
-    ctx = payload_to_template_context(payload)
-    buf = BytesIO()
-    doc = SimpleDocTemplate(
-        buf,
-        pagesize=A4,
-        leftMargin=1.8 * cm,
-        rightMargin=1.8 * cm,
-        topMargin=1.5 * cm,
-        bottomMargin=1.8 * cm,
-    )
-    styles = getSampleStyleSheet()
-    teal = colors.HexColor(_TEAL)
-    body_style = ParagraphStyle(
-        name="Body",
-        parent=styles["Normal"],
-        fontSize=10,
-        leading=14,
-        spaceAfter=10,
-        textColor=colors.HexColor(_fg),
-    )
-    heading_style = ParagraphStyle(
-        name="Heading",
-        parent=styles["Heading1"],
-        fontName="Helvetica-Bold",
-        fontSize=13,
-        spaceAfter=6,
-        spaceBefore=18,
-        textColor=colors.HexColor(_fg),
-        borderPadding=(0, 0, 4, 0),
-    )
-    flow = []
-
-    # ---- Title block (accent bar): name + price (black) + % (green/red), then symbol + time ----
-    company_name = (ctx.get("company_name") or "").replace("&", "&amp;")
-    symbol = (ctx.get("symbol") or "").replace("&", "&amp;")
-    screener_quote = ctx.get("screener_quote") or {}
-    price_part = ""
-    if screener_quote.get("current_price") is not None:
-        price_part = f" &nbsp; <font size=\"11\" color=\"#1c1917\">₹ {screener_quote['current_price']}</font>"
-        pct = (screener_quote.get("price_change_pct") or "").strip()
-        if pct:
-            hex_color = "#dc2626" if pct.startswith("-") else "#059669"
-            price_part += f" &nbsp; <font size=\"10\" color=\"{hex_color}\">{pct}</font>"
-    line1 = f'<b><font size="14" color="#ffffff">{company_name}</font></b>{price_part}'
-    line2_parts = [f'<font size="10" color="#ffffff">({symbol})</font>']
-    if screener_quote.get("last_price_updated"):
-        line2_parts.append(f'<font size="9" color="#e0f2f1"> {screener_quote["last_price_updated"]}</font>')
-    meta_line = f"{ctx.get('exchange', 'NSE')} · Generated {ctx.get('generated_at', '')}"
-    line2_parts.append(f'<font size="9" color="#e0f2f1"> · {meta_line}</font>')
-    title_table = Table([
-        [Paragraph(line1)],
-        [Paragraph(" ".join(line2_parts))],
-    ], colWidths=[16 * cm])
-    title_table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), teal),
-        ("TEXTCOLOR", (0, 0), (-1, -1), colors.white),
-        ("LEFTPADDING", (0, 0), (-1, -1), 12),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 12),
-        ("TOPPADDING", (0, 0), (-1, 0), 14),
-        ("BOTTOMPADDING", (0, 0), (-1, 0), 4),
-        ("TOPPADDING", (0, 1), (-1, 1), 4),
-        ("BOTTOMPADDING", (0, 1), (-1, 1), 12),
-    ]))
-    flow.append(title_table)
-    flow.append(Spacer(1, 12))
-    # Key metrics (TTM) at top
-    key_metrics = ctx.get("key_metrics") or {}
-    if isinstance(key_metrics, dict) and (key_metrics.get("revenue_cr") or key_metrics.get("pat_cr") or key_metrics.get("roe") or key_metrics.get("market_cap")):
-        parts = ["<b>Key metrics (TTM):</b>"]
-        if key_metrics.get("market_cap"):
-            parts.append(f"Market Cap ₹ {key_metrics['market_cap']}")
-        if key_metrics.get("revenue_cr"):
-            parts.append(f"Revenue {key_metrics['revenue_cr']} Cr")
-        if key_metrics.get("pat_cr"):
-            parts.append(f"PAT {key_metrics['pat_cr']} Cr")
-        if key_metrics.get("roe"):
-            parts.append(f"ROE {key_metrics['roe']}")
-        if key_metrics.get("roce"):
-            parts.append(f"ROCE {key_metrics['roce']}")
-        if key_metrics.get("debt_equity"):
-            parts.append(f"D/E {key_metrics['debt_equity']}")
-        if key_metrics.get("eps"):
-            parts.append(f"EPS ₹{key_metrics['eps']}")
-        if key_metrics.get("debt_cr"):
-            parts.append(f"Debt {key_metrics['debt_cr']} Cr")
-        flow.append(Paragraph(" · ".join(parts).replace("&", "&amp;"), body_style))
-        flow.append(Spacer(1, 12))
-    flow.append(Spacer(1, 8))
-
-    def section(heading: str, text_key: str) -> None:
-        flow.append(Paragraph(heading.replace("&", "&amp;"), heading_style))
-        flow.append(Table([[""]], colWidths=[16 * cm], rowHeights=[2]).setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, -1), teal),
-            ("LEFTPADDING", (0, 0), (-1, -1), 0),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-        ])))
-        flow.append(Spacer(1, 8))
-        text = _strip_html_to_plain(ctx.get(text_key) or "")
-        if text:
-            flow.append(Paragraph(text.replace("&", "&amp;").replace("\n", "<br/>"), body_style))
-
-    for h, k in [
-        ("Executive Summary", "executive_summary"),
-        ("Company Overview", "company_overview"),
-        ("Management & Governance", "management_research"),
-        ("Financial Risk", "financial_risk"),
-    ]:
-        section(h, k)
-
-    # ---- Financial Strength Scorecard (report card style) ----
-    scorecard = ctx.get("financial_scorecard")
-    if isinstance(scorecard, dict):
-        flow.append(Paragraph("Financial Strength Scorecard", heading_style))
-        flow.append(Table([[""]], colWidths=[16 * cm], rowHeights=[2]).setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, -1), teal),
-        ])))
-        flow.append(Spacer(1, 8))
-        intro = Paragraph(
-            '<font size="9" color="#78716c">30-second health check across 6 core signals (TTM and YoY).</font>',
-            body_style,
-        )
-        flow.append(intro)
-        flow.append(Spacer(1, 8))
-        # Grade + verdict row
-        tier = scorecard.get("verdict_tier") or "average"
-        letter_grade = scorecard.get("letter_grade") or "—"
-        score_val = scorecard.get("score", 0)
-        total_val = scorecard.get("total", 6)
-        verdict_text = (scorecard.get("verdict") or "").replace("&", "&amp;")
-        if tier == "strong":
-            grade_bg = colors.HexColor(_green)
-            verdict_bg = colors.HexColor(_green_light)
-            verdict_border = _green
-        elif tier == "weak":
-            grade_bg = colors.HexColor(_red)
-            verdict_bg = colors.HexColor(_red_light)
-            verdict_border = _red
-        else:
-            grade_bg = colors.HexColor(_amber)
-            verdict_bg = colors.HexColor(_amber_light)
-            verdict_border = _amber
-        grade_cell = Paragraph(
-            f'<b><font size="16" color="#ffffff">{letter_grade}</font></b>',
-            ParagraphStyle(name="Grade", fontSize=16, textColor=colors.white, alignment=1),
-        )
-        verdict_para = Paragraph(f'<b>Verdict:</b> {verdict_text}', body_style) if verdict_text else Paragraph("", body_style)
-        score_table = Table(
-            [[grade_cell, f"{score_val} / {total_val}", verdict_para]],
-            colWidths=[2 * cm, 2.5 * cm, 11.5 * cm],
-        )
-        score_table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (0, -1), grade_bg),
-            ("BACKGROUND", (2, 0), (2, -1), verdict_bg),
-            ("BOX", (2, 0), (2, -1), 0.5, colors.HexColor(verdict_border)),
-            ("LEFTPADDING", (0, 0), (-1, -1), 8),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-            ("TOPPADDING", (0, 0), (-1, -1), 8),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("FONTNAME", (1, 0), (1, -1), "Helvetica-Bold"),
-            ("FONTSIZE", (1, 0), (1, -1), 11),
-        ]))
-        flow.append(score_table)
-        flow.append(Spacer(1, 8))
-        # Metrics table: Metric | Value | Signal | Pass/Fail
-        metrics = scorecard.get("metrics") or []
-        if metrics:
-            m_headers = ["Metric", "Value", "Signal", "Result"]
-            m_data = [m_headers]
-            for m in metrics:
-                name = (m.get("name") or "").replace("&", "&amp;")
-                val = (m.get("display_value") or "").replace("&", "&amp;")
-                sig = (m.get("signal") or "").replace("&", "&amp;")
-                result = "Pass" if m.get("passed") else "Needs improvement"
-                m_data.append([name, val, sig, result])
-            m_table = Table(m_data, colWidths=[4 * cm, 3.5 * cm, 4.5 * cm, 4 * cm])
-            m_style = [
-                ("BACKGROUND", (0, 0), (-1, 0), teal),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, 0), 9),
-                ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
-                ("TOPPADDING", (0, 0), (-1, 0), 6),
-                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e7e5e4")),
-            ]
-            for i, row in enumerate(m_data[1:], start=1):
-                passed = metrics[i - 1].get("passed")
-                if passed:
-                    m_style.append(("BACKGROUND", (0, i), (-1, i), colors.HexColor(_green_light)))
-                    m_style.append(("TEXTCOLOR", (3, i), (3, i), colors.HexColor(_green)))
-                else:
-                    m_style.append(("BACKGROUND", (0, i), (-1, i), colors.HexColor(_red_light)))
-                    m_style.append(("TEXTCOLOR", (3, i), (3, i), colors.HexColor(_red)))
-            m_table.setStyle(TableStyle(m_style))
-            flow.append(m_table)
-        flow.append(Spacer(1, 16))
-
-    # ---- 5-Year Financial Trend ----
-    five_year = ctx.get("five_year_trend") or {}
-    if five_year.get("headers") and five_year.get("rows"):
-        flow.append(Paragraph("5-Year Financial Trend", heading_style))
-        flow.append(Table([[""]], colWidths=[16 * cm], rowHeights=[2]).setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, -1), teal),
-        ])))
-        flow.append(Spacer(1, 8))
-        intro = Paragraph(
-            '<font size="9" color="#78716c">Latest 5 completed financial years. Values in Rs Crores unless noted.</font>',
-            body_style,
-        )
-        flow.append(intro)
-        flow.append(Spacer(1, 6))
-        headers = ["Metric", "Unit"] + list(five_year["headers"])
-        data = [headers]
-        for row in five_year.get("rows", []):
-            cells = [row.get("metric", ""), row.get("unit", "")]
-            cells.extend(str(c) for c in row.get("cells", []))
-            data.append(cells)
-        col_count = len(headers)
-        col_width = 16.0 * cm / col_count
-        t = Table(data, colWidths=[3.2 * cm, 1.2 * cm] + [col_width] * (col_count - 2))
-        st = TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), teal),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("FONTSIZE", (0, 0), (-1, -1), 8),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("BACKGROUND", (0, 1), (0, -1), colors.HexColor(_surface)),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e7e5e4")),
-            ("LEFTPADDING", (0, 0), (-1, -1), 6),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-            ("TOPPADDING", (0, 0), (-1, -1), 5),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-            ("ALIGN", (2, 0), (-1, -1), "RIGHT"),
-        ])
-        for i in range(1, len(data)):
-            if i % 2 == 0:
-                st.add("BACKGROUND", (1, i), (-1, i), colors.HexColor(_surface2))
-        t.setStyle(st)
-        flow.append(t)
-        flow.append(Spacer(1, 8))
-        if ctx.get("trend_insight_summary"):
-            flow.append(Paragraph(
-                ctx["trend_insight_summary"].replace("&", "&amp;").replace("\n", "<br/>"),
-                body_style,
-            ))
-        flow.append(Spacer(1, 12))
-
-    # ---- Balance sheet highlights (Strengths / Concerns) ----
-    highlights = ctx.get("qoq_highlights") or {}
-    if isinstance(highlights, dict):
-        for box_title, color_hex, bg_hex in [
-            ("Strengths", _green, _green_light),
-            ("Concerns", _red, _red_light),
-        ]:
-            points = highlights.get("good" if "Strengths" in box_title else "bad") or []
-            if not points:
-                continue
-            content = "<br/>".join("• " + str(p).replace("&", "&amp;") for p in points[:8])
-            box = Table([
-                [Paragraph(f'<b><font color="{color_hex}" size="10">{box_title.replace("&", "&amp;")} (TTM)</font></b>')],
-                [Paragraph(f'<font size="9" color="#1c1917">{content}</font>')],
-            ], colWidths=[16 * cm])
-            box.setStyle(TableStyle([
-                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(bg_hex)),
-                ("LEFTPADDING", (0, 0), (-1, -1), 12),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 12),
-                ("TOPPADDING", (0, 0), (-1, -1), 10),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
-                ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor(color_hex)),
-                ("LINEBELOW", (0, 0), (-1, 0), 1, colors.HexColor(color_hex)),
-            ]))
-            flow.append(box)
-            flow.append(Spacer(1, 12))
-
-    if ctx.get("auditor_flags"):
-        flow.append(Paragraph("Auditor Flags & Qualifications".replace("&", "&amp;"), heading_style))
-        flow.append(Table([[""]], colWidths=[16 * cm], rowHeights=[2]).setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), teal)])))
-        flow.append(Spacer(1, 8))
-        flow.append(Paragraph(
-            _strip_html_to_plain(ctx["auditor_flags"]).replace("&", "&amp;").replace("\n", "<br/>"),
-            body_style,
-        ))
-        flow.append(Spacer(1, 12))
-
-    flow.append(Paragraph(ctx.get("concall_section_title", "Concall Evaluation").replace("&", "&amp;"), heading_style))
-    flow.append(Table([[""]], colWidths=[16 * cm], rowHeights=[2]).setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), teal)])))
-    flow.append(Spacer(1, 8))
-    flow.append(Paragraph(
-        _strip_html_to_plain(ctx.get("concall_evaluation", "")).replace("&", "&amp;").replace("\n", "<br/>"),
-        body_style,
-    ))
-    flow.append(Spacer(1, 12))
-
-    flow.append(Paragraph("Sectoral Headwinds & Tailwinds".replace("&", "&amp;"), heading_style))
-    flow.append(Table([[""]], colWidths=[16 * cm], rowHeights=[2]).setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), teal)])))
-    flow.append(Spacer(1, 8))
-    flow.append(Paragraph(
-        _strip_html_to_plain(ctx.get("sectoral_analysis", "—")).replace("&", "&amp;").replace("\n", "<br/>"),
-        body_style,
-    ))
-
-    doc.build(flow)
-    return buf.getvalue()
+@contextlib.contextmanager
+def _suppress_stderr():
+    """Context manager that redirects stderr to devnull at fd level so C libraries (e.g. WeasyPrint deps) don't print."""
+    stderr_fd = sys.stderr.fileno()
+    try:
+        devnull_fd = os.open(os.devnull, os.O_WRONLY)
+    except OSError:
+        yield
+        return
+    try:
+        old_stderr = os.dup(stderr_fd)
+        try:
+            os.dup2(devnull_fd, stderr_fd)
+            yield
+        finally:
+            os.dup2(old_stderr, stderr_fd)
+            os.close(old_stderr)
+    finally:
+        os.close(devnull_fd)
 
 
 def render_payload_to_pdf(payload: dict) -> bytes:
-    """Render report payload to PDF bytes. Uses WeasyPrint if available, else xhtml2pdf fallback."""
-    html_content = render_payload_to_html(payload)
-    styles_path = _REPO_ROOT / "src" / "report" / "styles.css"
-    template_dir = _REPO_ROOT / "src" / "report" / "templates"
+    """Render report payload to PDF using Playwright only. Raises on failure."""
+    playwright_pdf = None
+    playwright_error = None
+    with _suppress_stderr():
+        try:
+            playwright_pdf = _pdf_playwright(payload)
+        except Exception as e:
+            playwright_error = e
 
-    try:
-        from weasyprint import HTML, CSS
-        if not styles_path.is_file():
-            raise FileNotFoundError(f"PDF styles not found: {styles_path}")
-        html_doc = HTML(string=html_content, base_url=str(template_dir))
-        css = CSS(filename=str(styles_path))
-        return html_doc.write_pdf(stylesheets=[css])
-    except (ImportError, OSError) as e:
-        log.warning("WeasyPrint unavailable (%s), using reportlab fallback", e)
-        return _pdf_fallback_reportlab(payload)
-    except Exception as e:
-        log.warning("WeasyPrint failed (%s), using reportlab fallback", e)
-        return _pdf_fallback_reportlab(payload)
+    if playwright_pdf is not None:
+        return playwright_pdf
+    if playwright_error is not None:
+        raise RuntimeError(f"PDF generation failed: {playwright_error}") from playwright_error
+    raise RuntimeError(
+        "PDF generation failed: Chromium not available. Run ./build.sh or playwright install chromium."
+    )

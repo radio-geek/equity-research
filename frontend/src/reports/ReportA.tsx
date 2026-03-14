@@ -10,12 +10,6 @@ import { SectoralCard } from '../components/SectoralCard'
 import { ValueChainFlowchart } from '../components/ValueChainFlowchart'
 import { useAuth } from '../contexts/AuthContext'
 
-const verdictTierStyles = {
-  strong: { bg: 'var(--green)', label: '#047857', wrapBg: 'rgba(5, 150, 105, 0.12)', border: 'var(--green)' },
-  average: { bg: '#d97706', label: '#b45309', wrapBg: 'rgba(217, 119, 6, 0.12)', border: '#d97706' },
-  weak: { bg: 'var(--red)', label: '#b91c1c', wrapBg: 'rgba(220, 38, 38, 0.12)', border: 'var(--red)' },
-} as const
-
 const auditTypeBadgeBg: Record<string, string> = {
   'qualified opinion': '#b71c1c',
   'emphasis of matter': '#e65100',
@@ -107,62 +101,6 @@ function AuditorTimelineView({ summary, events }: { summary?: string; events: Au
   )
 }
 
-function FinancialScorecard({ scorecard }: { scorecard: NonNullable<ReportView['financialScorecard']> }) {
-  const tier = (scorecard.verdictTier ?? 'average') as keyof typeof verdictTierStyles
-  const style = verdictTierStyles[tier] ?? verdictTierStyles.average
-  return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: '1.25rem 1.5rem', background: 'var(--surface)', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-      <p style={{ fontSize: '0.875rem', color: 'var(--textMuted)', margin: '0 0 1rem 0' }}>
-        30-second health check across 6 core signals (TTM and YoY).
-      </p>
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '1.25rem', marginBottom: '1rem', paddingBottom: '1rem', borderBottom: '1px solid var(--border)' }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>
-          <span
-            style={{
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 44, height: 44,
-              fontSize: '1.5rem', fontWeight: 700, borderRadius: 10, background: style.bg, color: '#fff',
-            }}
-          >
-            {scorecard.letterGrade ?? '—'}
-          </span>
-          <span style={{ fontSize: '1.125rem', fontWeight: 600, color: 'var(--text)' }}>
-            {scorecard.score} / {scorecard.total}
-          </span>
-        </div>
-        <div style={{ flex: 1, minWidth: 220, padding: '0.5rem 0.75rem', borderRadius: 8, background: style.wrapBg, borderLeft: `4px solid ${style.border}` }}>
-          <span style={{ fontWeight: 600, fontSize: '0.9rem', color: style.label, marginRight: '0.35rem' }}>Verdict:</span>
-          <span style={{ fontSize: '0.95rem', color: 'var(--text)' }}>{scorecard.verdict}</span>
-        </div>
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-        {scorecard.metrics?.map((m) => (
-          <div
-            key={m.name}
-            style={{
-              display: 'grid', gridTemplateColumns: '1fr auto auto auto', alignItems: 'center', gap: '0.75rem',
-              padding: '0.5rem 0.6rem', borderRadius: 8, fontSize: '0.95rem',
-              background: m.passed ? 'rgba(5, 150, 105, 0.08)' : 'rgba(220, 38, 38, 0.08)',
-              borderLeft: `3px solid ${m.passed ? 'var(--green)' : 'var(--red)'}`,
-            }}
-          >
-            <span style={{ fontWeight: 600, color: 'var(--text)' }}>{m.name}</span>
-            <span style={{ color: 'var(--text)' }}>{m.display_value}</span>
-            {m.signal && <span style={{ color: 'var(--textMuted)', fontSize: '0.85rem' }}>({m.signal})</span>}
-            <span
-              style={{
-                fontSize: '0.8rem', fontWeight: 600, padding: '0.2rem 0.5rem', borderRadius: 6, justifySelf: 'end',
-                background: m.passed ? 'var(--green)' : 'var(--red)', color: '#fff',
-              }}
-            >
-              {m.passed ? 'Pass' : 'Needs improvement'}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
 function LockIcon() {
   return (
     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -176,21 +114,46 @@ interface ReportAProps {
   report: ReportView
 }
 
+/** Key metrics strip order (from Screener): Stock P/E, Market Cap, ROCE %, ROE %, Debt/Equity, PAT Margin %, EBITDA Margin % */
+const KEY_METRIC_KEYS: Array<{ key: string; label: string }> = [
+  { key: 'pe', label: 'Stock P/E' },
+  { key: 'market_cap', label: 'Market Cap' },
+  { key: 'roce', label: 'ROCE %' },
+  { key: 'roe', label: 'ROE %' },
+  { key: 'debt_equity', label: 'Debt/Equity' },
+  { key: 'pat_margin', label: 'PAT Margin %' },
+  { key: 'ebitda_margin', label: 'EBITDA Margin %' },
+]
+
+/** 5-year trend: prefer mapped view, fallback to raw payload financials (e.g. if mapper missed it). */
+function getFiveYearTrend(report: ReportView): ReportView['fiveYearTrend'] {
+  if (report.fiveYearTrend?.headers?.length) return report.fiveYearTrend
+  const raw = (report as ReportView & { financials?: { five_year_trend?: ReportView['fiveYearTrend'] } }).financials?.five_year_trend
+  if (raw?.headers?.length && Array.isArray(raw.rows)) return raw
+  return report.fiveYearTrend ?? undefined
+}
+
 export function ReportA({ report }: ReportAProps) {
   const { isAuthenticated, signIn } = useAuth()
+  const fiveYearTrend = getFiveYearTrend(report)
   const ttm = report.yearlyMetrics?.find((m) => m.period_label === 'TTM') ?? report.yearlyMetrics?.[report.yearlyMetrics.length - 1]
   const sq = report.screenerQuote
-  const kpis = ttm
-    ? [
-        { label: 'ROE', value: `${ttm.roe ?? '—'}%`, trend: ttm.roe_yoy_pct != null ? Number(ttm.roe_yoy_pct) : undefined, lowerIsBetter: false },
-        { label: 'ROCE', value: `${ttm.roce ?? '—'}%`, trend: ttm.roce_yoy_pct != null ? Number(ttm.roce_yoy_pct) : undefined, lowerIsBetter: false },
-        { label: 'D/E', value: ttm.debt_equity != null ? Number(ttm.debt_equity).toFixed(2) : '—', trend: ttm.debt_equity_yoy_pct != null ? Number(ttm.debt_equity_yoy_pct) : undefined, lowerIsBetter: true },
-        { label: 'CFO (Cr)', value: String(ttm.cfo_cr ?? '—'), trend: ttm.cfo_yoy_pct != null ? Number(ttm.cfo_yoy_pct) : undefined, lowerIsBetter: false },
-        { label: 'EBITDA (Cr)', value: String(ttm.ebitda_cr ?? '—'), trend: ttm.ebitda_yoy_pct != null ? Number(ttm.ebitda_yoy_pct) : undefined, lowerIsBetter: false },
-        { label: 'PAT (Cr)', value: String(ttm.pat_cr ?? '—'), trend: ttm.pat_yoy_pct != null ? Number(ttm.pat_yoy_pct) : undefined, lowerIsBetter: false },
-        ...(sq?.marketCap != null && sq.marketCap !== '' ? [{ label: 'Market Cap', value: sq.marketCap, trend: undefined as number | undefined, lowerIsBetter: false }] : []),
-      ]
-    : []
+  const keyMetrics = report.keyMetrics
+  const kpis =
+    keyMetrics && Object.keys(keyMetrics).length > 0
+      ? KEY_METRIC_KEYS.filter(({ key }) => keyMetrics[key] != null && keyMetrics[key] !== '')
+          .map(({ key, label }) => ({ label, value: keyMetrics[key]!, trend: undefined as number | undefined, lowerIsBetter: false }))
+      : ttm
+        ? [
+            { label: 'ROE', value: `${ttm.roe ?? '—'}%`, trend: ttm.roe_yoy_pct != null ? Number(ttm.roe_yoy_pct) : undefined, lowerIsBetter: false },
+            { label: 'ROCE', value: `${ttm.roce ?? '—'}%`, trend: ttm.roce_yoy_pct != null ? Number(ttm.roce_yoy_pct) : undefined, lowerIsBetter: false },
+            { label: 'D/E', value: ttm.debt_equity != null ? Number(ttm.debt_equity).toFixed(2) : '—', trend: ttm.debt_equity_yoy_pct != null ? Number(ttm.debt_equity_yoy_pct) : undefined, lowerIsBetter: true },
+            { label: 'CFO (Cr)', value: String(ttm.cfo_cr ?? '—'), trend: ttm.cfo_yoy_pct != null ? Number(ttm.cfo_yoy_pct) : undefined, lowerIsBetter: false },
+            { label: 'EBITDA (Cr)', value: String(ttm.ebitda_cr ?? '—'), trend: ttm.ebitda_yoy_pct != null ? Number(ttm.ebitda_yoy_pct) : undefined, lowerIsBetter: false },
+            { label: 'PAT (Cr)', value: String(ttm.pat_cr ?? '—'), trend: ttm.pat_yoy_pct != null ? Number(ttm.pat_yoy_pct) : undefined, lowerIsBetter: false },
+            ...(sq?.marketCap != null && sq.marketCap !== '' ? [{ label: 'Market Cap', value: sq.marketCap, trend: undefined as number | undefined, lowerIsBetter: false }] : []),
+          ]
+        : []
 
   return (
     <div style={{ maxWidth: 1200, margin: '0 auto', padding: '2rem', fontFamily: 'var(--font)' }}>
@@ -437,12 +400,7 @@ export function ReportA({ report }: ReportAProps) {
 
       {isAuthenticated ? (
         <>
-          {report.financialScorecard && (
-            <Section title="Financial Strength Scorecard">
-              <FinancialScorecard scorecard={report.financialScorecard} />
-            </Section>
-          )}
-          {report.fiveYearTrend?.headers?.length ? (
+          {fiveYearTrend?.headers?.length ? (
             <Section title="5-Year Financial Trend">
               <p style={{ fontSize: '0.9rem', color: 'var(--textMuted)', marginBottom: '1rem' }}>
                 Latest 5 completed financial years. Values in ₹ Crores unless noted.
@@ -453,13 +411,13 @@ export function ReportA({ report }: ReportAProps) {
                     <tr>
                       <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border)', color: 'var(--textMuted)' }}>Metric</th>
                       <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border)', color: 'var(--textMuted)' }}>Unit</th>
-                      {report.fiveYearTrend.headers.map((h) => (
+                      {fiveYearTrend.headers.map((h) => (
                         <th key={h} style={{ textAlign: 'right', padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border)', color: 'var(--textMuted)' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {report.fiveYearTrend.rows?.map((row, ri) => (
+                    {fiveYearTrend.rows?.map((row, ri) => (
                       <tr key={ri}>
                         <td style={{ padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border)' }}>{row.metric}</td>
                         <td style={{ padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border)', color: 'var(--textMuted)' }}>{row.unit}</td>
@@ -488,12 +446,7 @@ export function ReportA({ report }: ReportAProps) {
         </>
       ) : (
         <>
-          {report.financialScorecard && (
-            <Section title="Financial Strength Scorecard">
-              <FinancialScorecard scorecard={report.financialScorecard} />
-            </Section>
-          )}
-          {report.fiveYearTrend?.headers?.length ? (
+          {fiveYearTrend?.headers?.length ? (
             <Section title="5-Year Financial Trend">
               <p style={{ fontSize: '0.9rem', color: 'var(--textMuted)', marginBottom: '1rem' }}>
                 Latest 5 completed financial years. Values in ₹ Crores unless noted.
@@ -504,13 +457,13 @@ export function ReportA({ report }: ReportAProps) {
                     <tr>
                       <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border)', color: 'var(--textMuted)' }}>Metric</th>
                       <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border)', color: 'var(--textMuted)' }}>Unit</th>
-                      {report.fiveYearTrend.headers.map((h) => (
+                      {fiveYearTrend.headers.map((h) => (
                         <th key={h} style={{ textAlign: 'right', padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border)', color: 'var(--textMuted)' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {report.fiveYearTrend.rows?.map((row, ri) => (
+                    {fiveYearTrend.rows?.map((row, ri) => (
                       <tr key={ri}>
                         <td style={{ padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border)' }}>{row.metric}</td>
                         <td style={{ padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border)', color: 'var(--textMuted)' }}>{row.unit}</td>
