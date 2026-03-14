@@ -114,21 +114,46 @@ interface ReportAProps {
   report: ReportView
 }
 
+/** Key metrics strip order (from Screener): Stock P/E, Market Cap, ROCE %, ROE %, Debt/Equity, PAT Margin %, EBITDA Margin % */
+const KEY_METRIC_KEYS: Array<{ key: string; label: string }> = [
+  { key: 'pe', label: 'Stock P/E' },
+  { key: 'market_cap', label: 'Market Cap' },
+  { key: 'roce', label: 'ROCE %' },
+  { key: 'roe', label: 'ROE %' },
+  { key: 'debt_equity', label: 'Debt/Equity' },
+  { key: 'pat_margin', label: 'PAT Margin %' },
+  { key: 'ebitda_margin', label: 'EBITDA Margin %' },
+]
+
+/** 5-year trend: prefer mapped view, fallback to raw payload financials (e.g. if mapper missed it). */
+function getFiveYearTrend(report: ReportView): ReportView['fiveYearTrend'] {
+  if (report.fiveYearTrend?.headers?.length) return report.fiveYearTrend
+  const raw = (report as ReportView & { financials?: { five_year_trend?: ReportView['fiveYearTrend'] } }).financials?.five_year_trend
+  if (raw?.headers?.length && Array.isArray(raw.rows)) return raw
+  return report.fiveYearTrend ?? undefined
+}
+
 export function ReportA({ report }: ReportAProps) {
   const { isAuthenticated, signIn } = useAuth()
+  const fiveYearTrend = getFiveYearTrend(report)
   const ttm = report.yearlyMetrics?.find((m) => m.period_label === 'TTM') ?? report.yearlyMetrics?.[report.yearlyMetrics.length - 1]
   const sq = report.screenerQuote
-  const kpis = ttm
-    ? [
-        { label: 'ROE', value: `${ttm.roe ?? '—'}%`, trend: ttm.roe_yoy_pct != null ? Number(ttm.roe_yoy_pct) : undefined, lowerIsBetter: false },
-        { label: 'ROCE', value: `${ttm.roce ?? '—'}%`, trend: ttm.roce_yoy_pct != null ? Number(ttm.roce_yoy_pct) : undefined, lowerIsBetter: false },
-        { label: 'D/E', value: ttm.debt_equity != null ? Number(ttm.debt_equity).toFixed(2) : '—', trend: ttm.debt_equity_yoy_pct != null ? Number(ttm.debt_equity_yoy_pct) : undefined, lowerIsBetter: true },
-        { label: 'CFO (Cr)', value: String(ttm.cfo_cr ?? '—'), trend: ttm.cfo_yoy_pct != null ? Number(ttm.cfo_yoy_pct) : undefined, lowerIsBetter: false },
-        { label: 'EBITDA (Cr)', value: String(ttm.ebitda_cr ?? '—'), trend: ttm.ebitda_yoy_pct != null ? Number(ttm.ebitda_yoy_pct) : undefined, lowerIsBetter: false },
-        { label: 'PAT (Cr)', value: String(ttm.pat_cr ?? '—'), trend: ttm.pat_yoy_pct != null ? Number(ttm.pat_yoy_pct) : undefined, lowerIsBetter: false },
-        ...(sq?.marketCap != null && sq.marketCap !== '' ? [{ label: 'Market Cap', value: sq.marketCap, trend: undefined as number | undefined, lowerIsBetter: false }] : []),
-      ]
-    : []
+  const keyMetrics = report.keyMetrics
+  const kpis =
+    keyMetrics && Object.keys(keyMetrics).length > 0
+      ? KEY_METRIC_KEYS.filter(({ key }) => keyMetrics[key] != null && keyMetrics[key] !== '')
+          .map(({ key, label }) => ({ label, value: keyMetrics[key]!, trend: undefined as number | undefined, lowerIsBetter: false }))
+      : ttm
+        ? [
+            { label: 'ROE', value: `${ttm.roe ?? '—'}%`, trend: ttm.roe_yoy_pct != null ? Number(ttm.roe_yoy_pct) : undefined, lowerIsBetter: false },
+            { label: 'ROCE', value: `${ttm.roce ?? '—'}%`, trend: ttm.roce_yoy_pct != null ? Number(ttm.roce_yoy_pct) : undefined, lowerIsBetter: false },
+            { label: 'D/E', value: ttm.debt_equity != null ? Number(ttm.debt_equity).toFixed(2) : '—', trend: ttm.debt_equity_yoy_pct != null ? Number(ttm.debt_equity_yoy_pct) : undefined, lowerIsBetter: true },
+            { label: 'CFO (Cr)', value: String(ttm.cfo_cr ?? '—'), trend: ttm.cfo_yoy_pct != null ? Number(ttm.cfo_yoy_pct) : undefined, lowerIsBetter: false },
+            { label: 'EBITDA (Cr)', value: String(ttm.ebitda_cr ?? '—'), trend: ttm.ebitda_yoy_pct != null ? Number(ttm.ebitda_yoy_pct) : undefined, lowerIsBetter: false },
+            { label: 'PAT (Cr)', value: String(ttm.pat_cr ?? '—'), trend: ttm.pat_yoy_pct != null ? Number(ttm.pat_yoy_pct) : undefined, lowerIsBetter: false },
+            ...(sq?.marketCap != null && sq.marketCap !== '' ? [{ label: 'Market Cap', value: sq.marketCap, trend: undefined as number | undefined, lowerIsBetter: false }] : []),
+          ]
+        : []
 
   return (
     <div style={{ maxWidth: 1200, margin: '0 auto', padding: '2rem', fontFamily: 'var(--font)' }}>
@@ -375,7 +400,7 @@ export function ReportA({ report }: ReportAProps) {
 
       {isAuthenticated ? (
         <>
-          {report.fiveYearTrend?.headers?.length ? (
+          {fiveYearTrend?.headers?.length ? (
             <Section title="5-Year Financial Trend">
               <p style={{ fontSize: '0.9rem', color: 'var(--textMuted)', marginBottom: '1rem' }}>
                 Latest 5 completed financial years. Values in ₹ Crores unless noted.
@@ -386,13 +411,13 @@ export function ReportA({ report }: ReportAProps) {
                     <tr>
                       <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border)', color: 'var(--textMuted)' }}>Metric</th>
                       <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border)', color: 'var(--textMuted)' }}>Unit</th>
-                      {report.fiveYearTrend.headers.map((h) => (
+                      {fiveYearTrend.headers.map((h) => (
                         <th key={h} style={{ textAlign: 'right', padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border)', color: 'var(--textMuted)' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {report.fiveYearTrend.rows?.map((row, ri) => (
+                    {fiveYearTrend.rows?.map((row, ri) => (
                       <tr key={ri}>
                         <td style={{ padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border)' }}>{row.metric}</td>
                         <td style={{ padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border)', color: 'var(--textMuted)' }}>{row.unit}</td>
@@ -421,7 +446,7 @@ export function ReportA({ report }: ReportAProps) {
         </>
       ) : (
         <>
-          {report.fiveYearTrend?.headers?.length ? (
+          {fiveYearTrend?.headers?.length ? (
             <Section title="5-Year Financial Trend">
               <p style={{ fontSize: '0.9rem', color: 'var(--textMuted)', marginBottom: '1rem' }}>
                 Latest 5 completed financial years. Values in ₹ Crores unless noted.
@@ -432,13 +457,13 @@ export function ReportA({ report }: ReportAProps) {
                     <tr>
                       <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border)', color: 'var(--textMuted)' }}>Metric</th>
                       <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border)', color: 'var(--textMuted)' }}>Unit</th>
-                      {report.fiveYearTrend.headers.map((h) => (
+                      {fiveYearTrend.headers.map((h) => (
                         <th key={h} style={{ textAlign: 'right', padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border)', color: 'var(--textMuted)' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {report.fiveYearTrend.rows?.map((row, ri) => (
+                    {fiveYearTrend.rows?.map((row, ri) => (
                       <tr key={ri}>
                         <td style={{ padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border)' }}>{row.metric}</td>
                         <td style={{ padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border)', color: 'var(--textMuted)' }}>{row.unit}</td>

@@ -34,16 +34,16 @@
     {{ company_name }} ({{ symbol }}) · {{ exchange }} · Generated {{ generated_at }}
   </div>
   {% endif %}
-  {% if key_metrics and (key_metrics.revenue_cr or key_metrics.pat_cr or key_metrics.roe) %}
+  {% if key_metrics and (key_metrics.pe or key_metrics.market_cap or key_metrics.roce or key_metrics.roe or key_metrics.debt_equity or key_metrics.pat_margin or key_metrics.ebitda_margin) %}
   <div class="key-metrics">
-    <strong>Key metrics (TTM):</strong>
-    {% if key_metrics.revenue_cr %}Revenue {{ key_metrics.revenue_cr }} Cr{% endif %}
-    {% if key_metrics.pat_cr %} · PAT {{ key_metrics.pat_cr }} Cr{% endif %}
-    {% if key_metrics.roe %} · ROE {{ key_metrics.roe }}{% endif %}
+    <strong>Key metrics (from Screener):</strong>
+    {% if key_metrics.pe %}Stock P/E {{ key_metrics.pe }}{% endif %}
+    {% if key_metrics.market_cap %} · Market Cap ₹ {{ key_metrics.market_cap }}{% endif %}
     {% if key_metrics.roce %} · ROCE {{ key_metrics.roce }}{% endif %}
-    {% if key_metrics.debt_equity %} · D/E {{ key_metrics.debt_equity }}{% endif %}
-    {% if key_metrics.eps %} · EPS ₹{{ key_metrics.eps }}{% endif %}
-    {% if key_metrics.debt_cr %} · Debt {{ key_metrics.debt_cr }} Cr{% endif %}
+    {% if key_metrics.roe %} · ROE {{ key_metrics.roe }}{% endif %}
+    {% if key_metrics.debt_equity %} · Debt/Equity {{ key_metrics.debt_equity }}{% endif %}
+    {% if key_metrics.pat_margin %} · PAT Margin % {{ key_metrics.pat_margin }}{% endif %}
+    {% if key_metrics.ebitda_margin %} · EBITDA Margin % {{ key_metrics.ebitda_margin }}{% endif %}
   </div>
   {% endif %}
 

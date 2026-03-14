@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
+from src.report.financial_evaluation import build_key_metrics
 from src.state import ResearchState
 
 logger = logging.getLogger(__name__)
@@ -83,6 +84,14 @@ def _build_report_payload(state: ResearchState) -> dict[str, Any]:
         "five_year_trend": state.get("five_year_trend") or {"headers": [], "rows": []},
         "trend_insight_summary": state.get("trend_insight_summary") or "",
     }
+
+    # Key metrics for report header / UI strip (Stock P/E, Market Cap, ROCE, ROE, D/E, PAT Margin %, EBITDA Margin %)
+    key_metrics = build_key_metrics(yearly_metrics if isinstance(yearly_metrics, list) else [])
+    if screener_quote.get("stock_pe") is not None:
+        key_metrics["pe"] = str(screener_quote["stock_pe"])
+    if screener_quote.get("market_cap"):
+        key_metrics["market_cap"] = str(screener_quote["market_cap"])
+    payload["key_metrics"] = key_metrics
 
     return payload
 

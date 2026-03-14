@@ -464,13 +464,15 @@ def payload_to_template_context(payload: dict) -> dict[str, Any]:
     generated_at = generated_at.replace("T", " ").replace("Z", "")[:16]
 
     from src.report.financial_evaluation import build_key_metrics
-    key_metrics = build_key_metrics(yearly_metrics)
     company = payload.get("company") or {}
     screener_quote = company.get("screener_quote") or {}
+    key_metrics = dict(payload.get("key_metrics") or build_key_metrics(yearly_metrics))
     if screener_quote.get("current_price") is not None:
         key_metrics["current_price"] = str(screener_quote["current_price"])
     if screener_quote.get("market_cap"):
         key_metrics["market_cap"] = str(screener_quote["market_cap"])
+    if screener_quote.get("stock_pe") is not None:
+        key_metrics["pe"] = str(screener_quote["stock_pe"])
     if screener_quote.get("last_price_updated"):
         key_metrics["last_price_updated"] = str(screener_quote["last_price_updated"])
 

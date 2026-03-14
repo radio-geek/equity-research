@@ -113,6 +113,10 @@ def fetch_yearly_financials(
         pat = _value_from_screener_df(pl, col, "Net Profit", "Net Profit +")
         pat_cr = round(pat, 2) if pat is not None else None
         eps_val = _value_from_screener_df(pl, col, "EPS in Rs", "EPS")
+        # OPM % = Operating Profit Margin % (EBITDA margin); PAT margin % = 100 * PAT / Revenue
+        opm_pct = _value_from_screener_df(pl, col, "OPM %", "OPM%")
+        pat_margin_pct = round(100 * pat / revenue, 2) if revenue and revenue != 0 and pat is not None else None
+        ebitda_margin_pct = round(opm_pct, 2) if opm_pct is not None else (round(100 * op / revenue, 2) if revenue and revenue != 0 and op is not None else None)
         # NPA % (banks/NBFCs; optional)
         gross_npa_pct = _value_from_screener_df(pl, col, "Gross NPA %")
         net_npa_pct = _value_from_screener_df(pl, col, "Net NPA %")
@@ -152,6 +156,8 @@ def fetch_yearly_financials(
             "roe": roe,
             "roce": roce,
             "eps": round(eps_val, 2) if eps_val is not None else None,
+            "pat_margin_pct": pat_margin_pct,
+            "ebitda_margin_pct": ebitda_margin_pct,
             "gross_npa_pct": round(gross_npa_pct, 2) if gross_npa_pct is not None else None,
             "net_npa_pct": round(net_npa_pct, 2) if net_npa_pct is not None else None,
             "revenue_yoy_pct": None,
@@ -202,6 +208,9 @@ def fetch_yearly_financials(
     ttm_roce = None
     if ttm_equity is not None and ttm_debt is not None and (ttm_equity + ttm_debt):
         ttm_roce = round(100 * ttm_op / (ttm_equity + ttm_debt), 2) if ttm_op is not None else None
+    ttm_opm = _value_from_screener_df(pl, ttm_col, "OPM %", "OPM%")
+    ttm_pat_margin_pct = round(100 * ttm_pat / ttm_revenue, 2) if ttm_revenue and ttm_revenue != 0 and ttm_pat is not None else None
+    ttm_ebitda_margin_pct = round(ttm_opm, 2) if ttm_opm is not None else (round(100 * ttm_op / ttm_revenue, 2) if ttm_revenue and ttm_revenue != 0 and ttm_op is not None else None)
 
     # Prefer ROE/ROCE from Screener ratios table (latest column or TTM) when available
     if ratios is not None and hasattr(ratios, "columns") and len(ratios.columns) > 0:
@@ -224,6 +233,8 @@ def fetch_yearly_financials(
         "roe": ttm_roe,
         "roce": ttm_roce,
         "eps": round(ttm_eps, 2) if ttm_eps is not None else None,
+        "pat_margin_pct": ttm_pat_margin_pct,
+        "ebitda_margin_pct": ttm_ebitda_margin_pct,
         "gross_npa_pct": round(ttm_gross_npa, 2) if ttm_gross_npa is not None else None,
         "net_npa_pct": round(ttm_net_npa, 2) if ttm_net_npa is not None else None,
         "revenue_yoy_pct": None,

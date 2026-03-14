@@ -204,16 +204,17 @@ def fetch_consolidated(symbol: str) -> dict[str, pd.DataFrame | None]:
 
 
 def fetch_company_quote(symbol: str) -> dict[str, Any]:
-    """Fetch main company page and extract current price, % change, market cap, and last price time.
+    """Fetch main company page and extract current price, % change, market cap, P/E, and last price time.
 
-    Returns dict with: current_price (float | None), price_change_pct (str, e.g. '+1.37%' or '-0.5%'),
-    market_cap (str), last_price_updated (str, e.g. '09 Mar - close price').
+    Returns dict with: current_price (float | None), price_change_pct (str), market_cap (str),
+    stock_pe (float | None), last_price_updated (str, e.g. '09 Mar - close price').
     """
     sym = (symbol or "").strip().upper()
     out: dict[str, Any] = {
         "current_price": None,
         "price_change_pct": None,
         "market_cap": None,
+        "stock_pe": None,
         "last_price_updated": None,
     }
     if not sym:
@@ -256,13 +257,21 @@ def fetch_company_quote(symbol: str) -> dict[str, Any]:
                     pass
 
     # Market cap: "Market Cap ₹ 19,26,475 Cr." or "Market Cap ₹ 1,234 Cr."
-    mc = re.search(r"Market Cap\s*[₹]\s*([\d,]+(?:\s*Cr\.?)?)", text, re.IGNORECASE)
+    mc = re.search(r"Market Cap\s*[₹]\s*([\d,]+)", text, re.IGNORECASE)
     if mc:
         out["market_cap"] = mc.group(1).strip()
+
+    # Stock P/E: "Stock P/E 47.0" in the key ratios block
+    pe_m = re.search(r"Stock P/E\s*([\d.]+)", text, re.IGNORECASE)
+    if pe_m:
+        try:
+            out["stock_pe"] = float(pe_m.group(1).strip())
+        except ValueError:
+            pass
 
     # Last updated: "09 Mar - close price" or "Mar 09 - close" (near the big price)
     date_m = re.search(r"(\d{1,2}\s+[A-Za-z]+\s*-\s*close\s*price|\d{1,2}\s+[A-Za-z]+\s*-\s*close)", text, re.IGNORECASE)
     if date_m:
-        out["last_price_updated"] = date_m.group(1).strip()
+        out["last_price_updated"] = re.sub(r"\s+", " ", date_m.group(1).strip()).strip()
 
     return out

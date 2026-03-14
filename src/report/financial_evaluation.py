@@ -337,6 +337,12 @@ def build_five_year_trend_table(yearly_metrics: list[dict[str, Any]]) -> dict[st
         cells.append("—")
     rows.append({"metric": "Operating Cash Flow", "unit": "₹ Cr", "cells": cells})
 
+    # Drop rows where every cell is N/A (e.g. Gross NPA / Net NPA when not reported)
+    def _row_has_data(row: dict[str, Any]) -> bool:
+        cells_val = row.get("cells") or []
+        return any(c != "N/A" for c in cells_val)
+
+    rows = [r for r in rows if _row_has_data(r)]
     return {"headers": headers, "rows": rows}
 
 
@@ -368,8 +374,17 @@ def build_key_metrics(yearly_metrics: list[dict[str, Any]]) -> dict[str, str]:
         except (TypeError, ValueError):
             return "—"
 
-    rev = _n(ttm.get("revenue_cr"))
-    pat = _n(ttm.get("pat_cr"))
+    # PAT margin % and EBITDA margin %: use TTM table values (from Screener OPM % and computed PAT margin)
+    pat_margin_pct = _n(ttm.get("pat_margin_pct"))
+    if pat_margin_pct is None:
+        rev = _n(ttm.get("revenue_cr"))
+        pat = _n(ttm.get("pat_cr"))
+        pat_margin_pct = (100 * pat / rev) if rev and rev != 0 and pat is not None else None
+    ebitda_margin_pct = _n(ttm.get("ebitda_margin_pct"))
+    if ebitda_margin_pct is None:
+        rev = _n(ttm.get("revenue_cr"))
+        ebitda = _n(ttm.get("ebitda_cr"))
+        ebitda_margin_pct = (100 * ebitda / rev) if rev and rev != 0 and ebitda is not None else None
     return {
         "revenue_cr": _fmt_num(ttm.get("revenue_cr")),
         "pat_cr": _fmt_num(ttm.get("pat_cr")),
@@ -378,6 +393,8 @@ def build_key_metrics(yearly_metrics: list[dict[str, Any]]) -> dict[str, str]:
         "debt_equity": _fmt_num(ttm.get("debt_equity")),
         "eps": _fmt_num(ttm.get("eps")),
         "debt_cr": _fmt_num(ttm.get("debt_cr")),
+        "pat_margin": _fmt_pct(pat_margin_pct),
+        "ebitda_margin": _fmt_pct(ebitda_margin_pct),
     }
 
 
