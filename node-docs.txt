@@ -4,6 +4,28 @@ EQUITY RESEARCH PIPELINE — NODE IMPLEMENTATION DOCS
 Maintained across sessions. Add a new section per node as it is implemented.
 --------------------------------------------------------------------------------
 
+STRUCTURED OUTPUTS (LLM)
+------------------------
+Where the pipeline expects structured JSON from the LLM, we use Pydantic schemas
+and structured-output APIs for reliable typing and validation.
+
+- Schemas: src/nodes/schemas.py — CompanyOverviewStructured, ManagementStructured,
+  SectoralStructured, AuditorFlagsStructured (and nested models).
+- Invoke: src/nodes/prompts.py → invoke_llm_structured(system, user, response_format, ...).
+  - With web search (Responses API): tries client.responses.parse(text_format=PydanticModel);
+    on failure or refusal, falls back to create + model_validate_json.
+  - Without web search: LangChain get_llm(tools=None).with_structured_output(
+    response_format, method="json_schema").invoke(messages).
+- References: OpenAI structured outputs (response_format / text format),
+  LangChain with_structured_output(PydanticModel, method="json_schema").
+
+Nodes using structured invoke + Pydantic: company_overview, management, sectoral,
+auditor_flags. concall_evaluator keeps invoke_llm + manual JSON parse because its
+output is a discriminated union (mainboard_concall | sme_updates | no_concall_updates)
+which is not a single root object schema.
+
+--------------------------------------------------------------------------------
+
 ================================================================================
 NODE: concall_evaluator
 File: src/nodes/concall_evaluator.py
@@ -194,11 +216,14 @@ KNOWN LIMITATIONS / FUTURE IMPROVEMENTS
 ================================================================================
 NODE: auditor_flags
 File: src/nodes/auditor_flags.py
-Prompt: src/nodes/prompts.py → auditor_flags_prompt()
+Prompt: src/nodes/prompts.py → auditor_flags_prompt(), _last_5_fy()
+Schema: src/nodes/schemas.py → AuditorFlagsStructured. Invoke: invoke_llm_structured(..., AuditorFlagsStructured).
 Report: src/report/templates/base.html (section: "⚠ Auditor Flags & Qualifications")
-         backend/pdf_render.py converts markdown → HTML for template/PDF.
-         frontend ReportA.tsx renders auditor_flags with ReactMarkdown.
-         Section is conditional — only shown if auditor_flags state field is non-empty.
+         backend/pdf_render.py: _auditor_timeline_to_html() when auditor_flags_structured
+         present; else _markdown_to_html(auditor_flags). Timeline: descending by date,
+         red-flag items highlighted. CSS: src/report/styles.css (.audit-timeline, etc.)
+         frontend ReportA.tsx: AuditorTimelineView when auditorFlagsStructured.events present;
+         else ReactMarkdown(auditorFlags). Section shown if auditor_flags or structured has content.
 ================================================================================
 
 WHAT THIS NODE DOES
@@ -210,26 +235,38 @@ Uses the OpenAI Responses API (with web_search_preview) to search for and docume
 4. CARO (Companies Auditor's Report Order) qualifications
 5. Secretarial audit observations
 6. Auditor resignations / changes (red flag)
-Returns Markdown (no HTML). Backend converts to HTML for report/PDF; frontend renders markdown.
+Returns structured JSON: { summary, events[] }. Each event has date (YYYY-MM or YYYY for
+ordering), fy, type, issue, is_red_flag, optional status, management_response. Node
+parses JSON, normalises date from fy if missing, sorts events by date descending (latest
+at top). State: auditor_flags (summary string), auditor_flags_structured (full object).
+Report and frontend render a timeline with latest year/month at top; items with
+is_red_flag true are visually highlighted.
 
 GRAPH WIRING
 -------------
 - Added to _fan_out_research() alongside other parallel research nodes
 - graph.add_edge("auditor_flags", "aggregate")
-- state field: auditor_flags: NotRequired[str]
+- state fields: auditor_flags: NotRequired[str], auditor_flags_structured: NotRequired[dict]
 
 SYSTEM PROMPT DESIGN (auditor_flags_prompt)
 --------------------------------------------
-- **Web search required:** Prompt instructs the model to MUST use web search; do not rely on
-  internal knowledge. Search BSE/NSE filings, annual reports, Screener, Trendlyne, MoneyControl.
-- Search strategy: company+symbol auditor qualification, emphasis of matter, CARO, secretarial
-  audit, going concern, auditor change/resignation.
-- Per finding: FY, type (Qualified/Emphasis/Going Concern/CARO/Secretarial/Auditor Change),
-  issue, management response, status (Resolved/Recurring/Pending), financial impact.
-- Also flag: auditor changes, filing delays, restatements, related-party concerns.
+- **Web search required:** MUST use web search. Search BSE/NSE filings, annual reports,
+  Screener, Trendlyne, MoneyControl. _last_5_fy() injects explicit FY list (e.g. FY25–FY21).
+- Per event: date (YYYY-MM preferred; Indian FY year-end March → 2025-03 for FY25), fy,
+  type (Qualified Opinion, Emphasis of Matter, Going Concern, CARO, Secretarial Audit,
+  Auditor Change, Other), issue (one short line), is_red_flag (true for qualifications,
+  going concern, auditor resignation, filing delays, restatements).
+- Optional: status (Resolved/Recurring/Pending), management_response (one line).
+- Output: single JSON object only. summary (string), events (array). List events in
+  descending order by date. If no findings, events: [] and summary explaining search.
 
-Output format: Markdown only (no HTML, no code fences). Summary line, ## headings per finding
-or "Clean opinion", **bold** labels, bullets. If no qualifications found after search, say so.
+CSS CLASSES (timeline)
+-----------------------
+.audit-timeline-summary, .audit-timeline, .audit-timeline-item,
+.audit-timeline-item--red-flag, .audit-timeline-date, .audit-timeline-badge,
+.audit-timeline-badge--qualified | --emphasis | --going-concern | --caro | --secretarial
+| --auditor-change | --other, .audit-timeline-status, .audit-timeline-issue,
+.audit-timeline-mgmt.
 
 KNOWN LIMITATIONS / FUTURE IMPROVEMENTS
 -----------------------------------------
@@ -242,6 +279,7 @@ KNOWN LIMITATIONS / FUTURE IMPROVEMENTS
 NODE: company_overview
 File: src/nodes/company_overview.py
 Prompt: src/nodes/prompts.py → company_overview_structured_prompt()
+Schema: src/nodes/schemas.py → CompanyOverviewStructured. Invoke: invoke_llm_structured(..., CompanyOverviewStructured).
 Report: src/report/templates/base.html (section: "Company Overview")
          backend/pdf_render.py: _company_overview_structured_to_html() when structured
          present; else _markdown_to_html(company_overview)
@@ -308,67 +346,78 @@ KNOWN LIMITATIONS / FUTURE IMPROVEMENTS
 NODE: management (Management & Governance)
 File: src/nodes/management.py
 Prompt: src/nodes/prompts.py → management_prompt()
+Schema: src/nodes/schemas.py → ManagementStructured. Invoke: invoke_llm_structured(..., ManagementStructured).
 Report: src/report/templates/base.html (section: "Management & Governance")
-        backend/pdf_render.py converts markdown → HTML for template/PDF
-        frontend ReportA.tsx renders management_research with ReactMarkdown
+        backend/pdf_render.py: passes management_people, management_governance_news to
+        template; management_research (rpt_and_gaps) as markdown → HTML
+        frontend ReportA.tsx: table (managementPeople), ReactMarkdown (managementResearch),
+        governance news list (managementGovernanceNews with sentiment badges)
+CSS: src/report/styles.css — .management-people-table, .governance-news-list,
+     .governance-news-item, .governance-news-badge, .governance-news-badge-positive/negative
+State: src/state.py — management_research (str), management_people (NotRequired[list[dict]]),
+       management_governance_news (NotRequired[list[dict]])
 ================================================================================
 
 WHAT THIS NODE DOES
 --------------------
-Generates the Management & Governance section of the stock research report. Aligns with
-parent report spec: promoter & board, execution/vision/capital allocation, shareholding
-trends & pledges, related party transactions. Uses meta and shareholding from state;
-invokes LLM with web search to enrich from ARs, concalls, presentations, filings.
+Generates the Management & Governance section using structured JSON from the LLM (web
+search mandatory). Output: (1) people table: promoters and board (name, designation,
+description); (2) governance_news: recent governance-related items with sentiment
+(positive/negative/neutral); (3) rpt_and_gaps: short Markdown for RPT summary and gaps.
+Node parses JSON, validates shape, normalizes people and news; on parse failure falls
+back to raw LLM output in management_research only.
 
 DATA FLOW
 ----------
 Inputs from state: company_name, symbol, meta, shareholding
-Output to state: management_research (Markdown string)
+Output to state: management_research (str, always — RPT/gaps narrative or fallback);
+                 management_people (list when parse OK);
+                 management_governance_news (list when parse OK)
+
+STRUCTURED SCHEMA (LLM JSON)
+-----------------------------
+- people: [ { name, designation, description } ] — 1–3 sentence description per person
+- governance_news: [ { text, sentiment: "positive"|"negative"|"neutral" } ] — up to 5–8 items
+- rpt_and_gaps: string — Markdown for RPT summary and gaps/assumptions
 
 PROMPT DESIGN (management_prompt)
 ----------------------------------
-Role: Equity research analyst for Management & Governance section. Objective: structured,
-objective, data-driven section; highlight gaps or assumptions.
+Role: Equity research analyst. Output ONLY a single JSON object (no markdown/code fences).
+Web search (mandatory): promoter background, board composition, RPT, shareholding pledges,
+recent governance news (board changes, regulatory actions, awards, controversies).
+Schema: people (array of name/designation/description), governance_news (array of
+text/sentiment), rpt_and_gaps (string). Sentiment exactly one of positive, negative, neutral.
 
-Web search (mandatory): Model MUST use web search; do not rely on training knowledge.
-Search: promoter background, board composition/director credentials, RPT from AR/filings,
-shareholding pledges, management commentary on capital allocation/execution/vision.
-Base the section on search results. Cite with inline Markdown links.
-
-Required structure (## headings):
-- **Promoter & Board**: Promoter background, board strength/composition, independent
-  directors, credibility, governance red or green flags.
-- **Execution, Vision & Capital Allocation**: Track record (projects, capacity, M&A),
-  stated vision/strategy, capital allocation (dividends, debt, capex, buybacks),
-  management commentary on past performance.
-- **Shareholding Trends & Pledges**: Summary from provided quarterly shareholding data
-  (promoter/DII/FII/retail); promoter or other pledging, trend in pledge levels; or "no pledges".
-- **Related Party Transactions**: Material RPTs (nature, scale), arm's length or concerns,
-  auditor/regulatory observations; or "no material RPTs".
-End with **Gaps & assumptions** if any subsection relied on inference or lacked data.
-
-Output: Strictly Markdown (##, **bold**, bullets). If data thin, say so per subsection.
+HTML/CSS IN REPORT
+------------------
+- Promoter & Board: <table class="management-people-table qoq-table"> with Name, Designation, Description
+- management_research: .section div (RPT and gaps narrative, markdown → HTML)
+- Governance news: <ul class="governance-news-list">; each <li class="governance-news-item governance-news-{sentiment}">
+  with optional <span class="governance-news-badge governance-news-badge-positive|negative"> (no badge for neutral)
 
 DOWNSTREAM
 ----------
-- Report generator passes management_research to payload; backend _markdown_to_html for
-  Jinja template and PDF (tables extension); frontend ReactMarkdown + remarkGfm in
-  .report-markdown for headings, lists, links, tables.
+- Report generator: payload.management_research, management_people, management_governance_news
+- backend/pdf_render.py: passes lists to template; management_research → _markdown_to_html
+- Frontend: report.managementPeople → table; report.managementResearch → ReactMarkdown;
+  report.managementGovernanceNews → list with sentiment badges (green/red, none for neutral)
 
-TESTED ON
-----------
-(To be filled after run: symbol, date, note that all four subsections and gaps line appear.)
+BACKWARD COMPATIBILITY
+-----------------------
+If management_people or management_governance_news missing/empty, backend and frontend
+render only management_research / managementResearch as before (e.g. cached/old reports).
 
 KNOWN LIMITATIONS / FUTURE IMPROVEMENTS
 -----------------------------------------
-- RPT and pledge data depend on web search and provided shareholding; BSE/NSE filing
-  scrapers could improve accuracy in future
+- RPT and pledge data depend on web search; BSE/NSE filing scrapers could improve accuracy
+- LLM may occasionally return malformed JSON; node falls back to raw text in management_research
 ================================================================================
 
 ================================================================================
 NODE: sectoral
 File: src/nodes/sectoral.py
 Prompt: src/nodes/prompts.py → sectoral_prompt()
+Schema: src/nodes/schemas.py → SectoralStructured. Invoke: invoke_llm_structured(..., SectoralStructured).
 Report: src/report/templates/base.html (section: "Sectoral Headwinds & Tailwinds")
         backend/pdf_render.py → sectoral_intro, sectoral_tailwinds_html, sectoral_headwinds_html
         src/report/styles.css → .sectoral-two-col, .sectoral-tailwinds, .sectoral-headwinds
@@ -433,9 +482,9 @@ Report: src/report/templates/base.html — Financial Strength Scorecard, 5-Year 
 
 WHAT THIS NODE DOES
 --------------------
-1. Fetches yearly + TTM metrics from Screener.in (scraped; URL https://www.screener.in/company/{symbol}/consolidated/) and TTM statements (P&L TTM column + latest BS).
+1. Fetches yearly + TTM metrics from Screener.in (scraped; URL https://www.screener.in/company/{symbol}/consolidated/) and TTM statements (P&L TTM column + latest BS). Parsing supports two layouts: standard (Sales, Operating Profit, Net Profit; Borrowings) and bank/financial (Revenue +, Profit before tax/Financing Profit, Net Profit +; Borrowing). Table detection and row-key fallbacks in src/data/screener_scraper.py and src/data/yearly_financials.py.
 2. Builds Financial Strength Scorecard (6 signals: revenue growth >10%, profit growth > revenue growth, ROE >15%, D/E <0.5, positive TTM OCF, margins stable/improving). Score 0–6, verdict text, verdict_tier (strong|average|weak), letter_grade (A/B/C/D/F). Report card UI: prominent grade + verdict + metric rows with Pass/Needs improvement.
-3. Builds 5-Year Financial Trend table (latest 5 years + TTM column from Screener): Revenue, Revenue Growth %, PAT, PAT Growth %, EPS, EBITDA Margin %, NPM %, Debt, D/E, OCF (TTM = —), FCF. ROE and ROCE removed from table; shown in initial tiles from Screener ratios table (TTM/latest).
+3. Builds 5-Year Financial Trend table (latest 5 years + TTM column from Screener): Revenue, Revenue Growth %, PAT, PAT Growth %, EPS, EBITDA Margin %, NPM %, Debt, D/E, Gross NPA %, Net NPA % (if available), OCF (TTM = —). ROE and ROCE removed from table; shown in initial tiles from Screener ratios table (TTM/latest).
 4. Generates 2–3 line trend insight via LLM from the 5-year table.
 5. Optionally generates good/bad balance sheet highlights from TTM statements via LLM.
 
@@ -450,7 +499,7 @@ Uses same fetched (Screener) values. ROE and Debt/Equity prefer TTM when availab
 
 5-YEAR TABLE (financial_evaluation.build_five_year_trend_table)
 -----------------------------------------------------------------
-Includes last 5 year rows + TTM column. Rows: Revenue, Revenue Growth, PAT, PAT Growth, EPS, EBITDA Margin, NPM, Debt, Debt/Equity, Operating Cash Flow (TTM cell = —), Free Cash Flow. ROE and ROCE omitted; TTM ROE/ROCE come from Screener ratios table and are shown in initial tiles. All monetary in Crores.
+Includes last 5 year rows + TTM column. Rows: Revenue, Revenue Growth, PAT, PAT Growth, EPS, EBITDA Margin, NPM, Debt, Debt/Equity, Gross NPA %, Net NPA % (if available, e.g. banks), Operating Cash Flow (TTM cell = —). ROE and ROCE omitted; TTM ROE/ROCE come from Screener ratios table and are shown in initial tiles. All monetary in Crores.
 
 CSS / REPORT
 -------------

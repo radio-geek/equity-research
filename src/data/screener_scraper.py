@@ -96,14 +96,30 @@ def _table_to_dataframe(soup_table: Any) -> pd.DataFrame | None:
 
 
 def _find_tables_by_content(soup: BeautifulSoup) -> dict[str, Any]:
-    """Find P&L, Balance Sheet, Cash Flow, Ratios tables by scanning content."""
+    """Find P&L, Balance Sheet, Cash Flow, Ratios tables by scanning content.
+
+    P&L: Detects both standard (Sales, Operating Profit, Net Profit) and bank/financial
+    (Revenue +, Profit before tax / Financing Profit, Net Profit +) structures.
+    Balance Sheet: Accepts Borrowings or Borrowing (banks often use singular).
+    """
     tables = soup.find_all("table")
     result = {}
     for i, t in enumerate(tables):
         text = t.get_text()
-        if "Sales" in text and "Operating Profit" in text and "Net Profit" in text and "TTM" in text:
+        # Standard P&L: Sales, Operating Profit, Net Profit, TTM
+        is_standard_pl = (
+            "Sales" in text and "Operating Profit" in text and "Net Profit" in text and "TTM" in text
+        )
+        # Bank/financial P&L: Revenue +, Net Profit, TTM, and Profit before tax or Financing Profit
+        is_bank_pl = (
+            ("Revenue +" in text or "Revenue" in text)
+            and "Net Profit" in text
+            and "TTM" in text
+            and ("Profit before tax" in text or "Financing Profit" in text)
+        )
+        if is_standard_pl or is_bank_pl:
             result["profit_loss"] = (i, t)
-        elif "Borrowings" in text and "Equity Capital" in text and "Reserves" in text:
+        elif ("Borrowings" in text or "Borrowing" in text) and "Equity Capital" in text and "Reserves" in text:
             result["balance_sheet"] = (i, t)
         elif "Cash from Operating" in text or "Operating Activity" in text:
             result["cash_flow"] = (i, t)

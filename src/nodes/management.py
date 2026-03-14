@@ -7,19 +7,52 @@ from typing import Any
 
 from src.state import ResearchState
 
-from .prompts import invoke_llm, management_prompt
+from .prompts import invoke_llm_structured, management_prompt
+from .schemas import ManagementStructured
 
 logger = logging.getLogger(__name__)
 
 
 def management(state: ResearchState) -> dict[str, Any]:
-    """Generate management research summary; return state update."""
+    """Generate management research (structured + narrative); return state update."""
     symbol = state.get("symbol") or ""
     logger.info("management: starting for %s", symbol)
     company_name = state.get("company_name") or state.get("symbol") or ""
     meta = state.get("meta") or {}
     shareholding = state.get("shareholding") or []
     system, user = management_prompt(company_name, symbol, meta, shareholding)
-    text = invoke_llm(system, user)
+    parsed = invoke_llm_structured(
+        system, user, ManagementStructured, use_web_search=True, use_tavily_only=False
+    )
     logger.info("management: done for %s", symbol)
-    return {"management_research": text}
+
+    management_people: list[dict] = []
+    management_governance_news: list[dict] = []
+    management_research = ""
+
+    if parsed:
+        management_people = [
+            {"name": p.name, "designation": p.designation, "description": p.description}
+            for p in parsed.people
+        ]
+        management_governance_news = [
+            {"text": n.text, "sentiment": n.sentiment} for n in parsed.governance_news
+        ]
+        management_research = (parsed.rpt_and_gaps or "").strip()
+        if not management_research and (management_people or management_governance_news):
+            management_research = "Related party transactions and gaps: see search results above where available."
+        logger.info(
+            "management: parsed structured output, people=%d, news=%d",
+            len(management_people),
+            len(management_governance_news),
+        )
+
+    if not management_research:
+        management_research = "Management & governance data unavailable (parse or search failure)."
+
+    out: dict[str, Any] = {"management_research": management_research}
+    if management_people:
+        out["management_people"] = management_people
+    if management_governance_news:
+        out["management_governance_news"] = management_governance_news
+    return out

@@ -47,10 +47,13 @@ class ResearchState(TypedDict, total=False):
     company_overview: str
     company_overview_structured: NotRequired[dict]  # opening, value_chain, business_model_table, key_products, recent_developments
     management_research: str
+    management_people: NotRequired[list[dict]]  # [{name, designation, description}] promoters + board
+    management_governance_news: NotRequired[list[dict]]  # [{text, sentiment: positive|negative|neutral}]
     financial_risk: str
     concall_evaluation: str
     concall_section_title: NotRequired[str]  # "Concall Evaluation" or "Company Updates" (SME/no-concall)
     auditor_flags: NotRequired[str]
+    auditor_flags_structured: NotRequired[dict]  # { summary, events: [{ date, fy, type, issue, is_red_flag, status?, management_response? }] }
     sectoral_analysis: str
     sectoral_headwinds: NotRequired[list[str]]
     sectoral_tailwinds: NotRequired[list[str]]

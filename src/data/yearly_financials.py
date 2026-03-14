@@ -104,13 +104,18 @@ def fetch_yearly_financials(
         col_cf = _col_at(i, cf_cols)
         col_ratio = _col_at(i, ratio_cols)
 
-        revenue = _value_from_screener_df(pl, col, "Sales", "Sales +")
+        # Revenue: standard (Sales) and bank (Revenue +)
+        revenue = _value_from_screener_df(pl, col, "Sales", "Sales +", "Revenue +", "Revenue")
         revenue_cr = round(revenue, 2) if revenue is not None else None
-        op = _value_from_screener_df(pl, col, "Operating Profit")
+        # Operating profit: standard; bank uses Profit before tax or Financing Profit as proxy
+        op = _value_from_screener_df(pl, col, "Operating Profit", "Profit before tax", "Financing Profit")
         ebitda_cr = round(op, 2) if op is not None else None
         pat = _value_from_screener_df(pl, col, "Net Profit", "Net Profit +")
         pat_cr = round(pat, 2) if pat is not None else None
         eps_val = _value_from_screener_df(pl, col, "EPS in Rs", "EPS")
+        # NPA % (banks/NBFCs; optional)
+        gross_npa_pct = _value_from_screener_df(pl, col, "Gross NPA %")
+        net_npa_pct = _value_from_screener_df(pl, col, "Net NPA %")
 
         cfo_cr = None
         if cf is not None and col_cf and col_cf in cf_cols:
@@ -120,7 +125,8 @@ def fetch_yearly_financials(
         debt = None
         equity = None
         if bs is not None and col_bs:
-            debt = _value_from_screener_df(bs, col_bs, "Borrowings", "Borrowings +")
+            # Debt: standard (Borrowings); bank often uses "Borrowing" (singular)
+            debt = _value_from_screener_df(bs, col_bs, "Borrowings", "Borrowings +", "Borrowing")
             reserves = _value_from_screener_df(bs, col_bs, "Reserves")
             eq_cap = _value_from_screener_df(bs, col_bs, "Equity Capital")
             equity = (reserves or 0) + (eq_cap or 0) or None
@@ -146,6 +152,8 @@ def fetch_yearly_financials(
             "roe": roe,
             "roce": roce,
             "eps": round(eps_val, 2) if eps_val is not None else None,
+            "gross_npa_pct": round(gross_npa_pct, 2) if gross_npa_pct is not None else None,
+            "net_npa_pct": round(net_npa_pct, 2) if net_npa_pct is not None else None,
             "revenue_yoy_pct": None,
             "ebitda_yoy_pct": None,
             "pat_yoy_pct": None,
@@ -176,17 +184,19 @@ def fetch_yearly_financials(
     ttm_col = "TTM"
     latest_bs_col = bs_cols[-1] if bs_cols else None
 
-    ttm_revenue = _value_from_screener_df(pl, ttm_col, "Sales", "Sales +")
-    ttm_op = _value_from_screener_df(pl, ttm_col, "Operating Profit")
+    ttm_revenue = _value_from_screener_df(pl, ttm_col, "Sales", "Sales +", "Revenue +", "Revenue")
+    ttm_op = _value_from_screener_df(pl, ttm_col, "Operating Profit", "Profit before tax", "Financing Profit")
     ttm_pat = _value_from_screener_df(pl, ttm_col, "Net Profit", "Net Profit +")
     ttm_eps = _value_from_screener_df(pl, ttm_col, "EPS in Rs", "EPS")
+    ttm_gross_npa = _value_from_screener_df(pl, ttm_col, "Gross NPA %")
+    ttm_net_npa = _value_from_screener_df(pl, ttm_col, "Net NPA %")
     ttm_equity = None
     ttm_debt = None
     if bs is not None and latest_bs_col:
         r = _value_from_screener_df(bs, latest_bs_col, "Reserves")
         e = _value_from_screener_df(bs, latest_bs_col, "Equity Capital")
         ttm_equity = (r or 0) + (e or 0) or None
-        ttm_debt = _value_from_screener_df(bs, latest_bs_col, "Borrowings", "Borrowings +")
+        ttm_debt = _value_from_screener_df(bs, latest_bs_col, "Borrowings", "Borrowings +", "Borrowing")
     ttm_debt_equity = round(ttm_debt / ttm_equity, 2) if ttm_equity and ttm_equity != 0 and ttm_debt is not None else None
     ttm_roe = round(100 * ttm_pat / ttm_equity, 2) if ttm_pat is not None and ttm_equity and ttm_equity != 0 else None
     ttm_roce = None
@@ -214,6 +224,8 @@ def fetch_yearly_financials(
         "roe": ttm_roe,
         "roce": ttm_roce,
         "eps": round(ttm_eps, 2) if ttm_eps is not None else None,
+        "gross_npa_pct": round(ttm_gross_npa, 2) if ttm_gross_npa is not None else None,
+        "net_npa_pct": round(ttm_net_npa, 2) if ttm_net_npa is not None else None,
         "revenue_yoy_pct": None,
         "ebitda_yoy_pct": None,
         "pat_yoy_pct": None,

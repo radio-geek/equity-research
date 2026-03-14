@@ -42,7 +42,43 @@
   <div class="section">{{ company_overview | safe }}</div>
 
   <h1>Management & Governance</h1>
+  {% if management_people and management_people|length > 0 %}
+  <h2>Promoter & Board</h2>
+  <table class="management-people-table qoq-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Designation</th>
+        <th>Description</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in management_people %}
+      <tr>
+        <td class="management-people-name">{{ p.name or "—" }}</td>
+        <td>{{ p.designation or "—" }}</td>
+        <td class="qoq-cell">{{ p.description or "—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  {% if management_research %}
   <div class="section">{{ management_research | safe }}</div>
+  {% endif %}
+  {% if management_governance_news and management_governance_news|length > 0 %}
+  <h2>Governance news</h2>
+  <ul class="governance-news-list">
+    {% for n in management_governance_news %}
+    <li class="governance-news-item governance-news-{{ n.sentiment or 'neutral' }}">
+      {% if n.sentiment and n.sentiment != 'neutral' %}
+      <span class="governance-news-badge governance-news-badge-{{ n.sentiment }}">{{ n.sentiment | capitalize }}</span>
+      {% endif %}
+      {{ n.text or "—" }}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
 
   <h1>Financial Risk</h1>
   <div class="section">{{ financial_risk | safe }}</div>

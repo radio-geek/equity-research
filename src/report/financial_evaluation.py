@@ -215,7 +215,7 @@ def build_five_year_trend_table(yearly_metrics: list[dict[str, Any]]) -> dict[st
     """Build 5-Year Financial Trend table. Latest 5 completed years + TTM column (scraped from Screener).
 
     Rows: Revenue, Revenue Growth, PAT, PAT Growth, EPS, EBITDA Margin, Net Profit Margin,
-    Debt, Debt/Equity, Operating Cash Flow (TTM = —), Free Cash Flow.
+    Debt, Debt/Equity, Gross NPA %, Net NPA % (if available, e.g. banks), Operating Cash Flow (TTM = —).
     Missing values as N/A. Monetary in ₹ Cr.
     """
     all_metrics = yearly_metrics or []
@@ -319,17 +319,23 @@ def build_five_year_trend_table(yearly_metrics: list[dict[str, Any]]) -> dict[st
         cells.append(cell(ttm.get("debt_equity")))
     rows.append({"metric": "Debt / Equity", "unit": "Ratio", "cells": cells})
 
+    # Gross NPA % (if available, e.g. banks/NBFCs)
+    cells = [cell(m.get("gross_npa_pct"), "pct") for m in years_only]
+    if ttm:
+        cells.append(cell(ttm.get("gross_npa_pct"), "pct"))
+    rows.append({"metric": "Gross NPA", "unit": "%", "cells": cells})
+
+    # Net NPA % (if available, e.g. banks/NBFCs)
+    cells = [cell(m.get("net_npa_pct"), "pct") for m in years_only]
+    if ttm:
+        cells.append(cell(ttm.get("net_npa_pct"), "pct"))
+    rows.append({"metric": "Net NPA", "unit": "%", "cells": cells})
+
     # Operating Cash Flow (₹ Cr) — TTM column = — (Screener has no CF TTM)
     cells = [cell(m.get("cfo_cr")) for m in years_only]
     if ttm:
         cells.append("—")
     rows.append({"metric": "Operating Cash Flow", "unit": "₹ Cr", "cells": cells})
-
-    # Free Cash Flow (₹ Cr)
-    cells = ["N/A"] * len(years_only)
-    if ttm:
-        cells.append("N/A")
-    rows.append({"metric": "Free Cash Flow", "unit": "₹ Cr", "cells": cells})
 
     return {"headers": headers, "rows": rows}
 

@@ -45,10 +45,17 @@ def _build_report_payload(state: ResearchState) -> dict[str, Any]:
     payload["company_overview_structured"] = co_structured if isinstance(co_structured, dict) else None
     if state.get("management_research"):
         payload["management_research"] = state["management_research"]
+    mp = state.get("management_people")
+    payload["management_people"] = mp if isinstance(mp, list) else []
+    mgn = state.get("management_governance_news")
+    payload["management_governance_news"] = mgn if isinstance(mgn, list) else []
     if state.get("financial_risk"):
         payload["financial_risk"] = state["financial_risk"]
     if state.get("auditor_flags") is not None:
         payload["auditor_flags"] = state["auditor_flags"]
+    af_structured = state.get("auditor_flags_structured")
+    if isinstance(af_structured, dict) and af_structured:
+        payload["auditor_flags_structured"] = af_structured
 
     concall = state.get("concall_structured")
     payload["concall"] = concall if isinstance(concall, dict) else None
