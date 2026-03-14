@@ -20,9 +20,20 @@
     }
   </script>
   {% endif %}
+  {% if print_only %}
+  <div class="cover-page">
+    <h1 class="cover-company-name">{{ company_name }}</h1>
+    <p class="cover-symbol">{{ symbol }}</p>
+    <p class="cover-generated">Report generated {{ generated_at }}</p>
+  </div>
+  {% endif %}
+  {% if print_only %}
+  <div class="meta meta-slim">{{ exchange }} · {{ generated_at }}</div>
+  {% else %}
   <div class="meta">
     {{ company_name }} ({{ symbol }}) · {{ exchange }} · Generated {{ generated_at }}
   </div>
+  {% endif %}
   {% if key_metrics and (key_metrics.revenue_cr or key_metrics.pat_cr or key_metrics.roe) %}
   <div class="key-metrics">
     <strong>Key metrics (TTM):</strong>
@@ -35,13 +46,11 @@
     {% if key_metrics.debt_cr %} · Debt {{ key_metrics.debt_cr }} Cr{% endif %}
   </div>
   {% endif %}
-  <h1>Executive Summary</h1>
-  <div class="section">{{ executive_summary | safe }}</div>
 
-  <h1>Company Overview</h1>
+  <h1>Company overview</h1>
   <div class="section">{{ company_overview | safe }}</div>
 
-  <h1>Management & Governance</h1>
+  <h1>Management & governance</h1>
   {% if management_people and management_people|length > 0 %}
   <h2>Promoter & Board</h2>
   <table class="management-people-table qoq-table">
@@ -80,36 +89,9 @@
   </ul>
   {% endif %}
 
-  <h1>Financial Risk</h1>
-  <div class="section">{{ financial_risk | safe }}</div>
-
-  <h1>Financial Strength Scorecard</h1>
-  {% if financial_scorecard %}
-  <div class="scorecard-card">
-    <p class="scorecard-intro">30-second health check across 6 core signals (TTM and YoY).</p>
-    <div class="scorecard-header">
-      <div class="scorecard-grade-wrap">
-        <span class="scorecard-letter" data-tier="{{ financial_scorecard.verdict_tier | default('average') }}">{{ financial_scorecard.letter_grade | default('—') }}</span>
-        <span class="scorecard-fraction">{{ financial_scorecard.score }} / {{ financial_scorecard.total }}</span>
-      </div>
-      <div class="scorecard-verdict-wrap scorecard-verdict-{{ financial_scorecard.verdict_tier | default('average') }}">
-        <span class="scorecard-verdict-label">Verdict:</span>
-        <span class="scorecard-verdict-text">{{ financial_scorecard.verdict }}</span>
-      </div>
-    </div>
-    <div class="scorecard-metrics">
-      {% for m in financial_scorecard.metrics %}
-      <div class="scorecard-metric scorecard-metric-{% if m.passed %}pass{% else %}fail{% endif %}">
-        <span class="scorecard-metric-name">{{ m.name }}</span>
-        <span class="scorecard-metric-value">{{ m.display_value }}</span>
-        <span class="scorecard-metric-signal">({{ m.signal }})</span>
-        <span class="scorecard-metric-badge">{% if m.passed %}Pass{% else %}Needs improvement{% endif %}</span>
-      </div>
-      {% endfor %}
-    </div>
-  </div>
-  {% else %}
-  <p class="section">Scorecard not available (insufficient data).</p>
+  {% if auditor_flags %}
+  <h1>Auditor flags & qualifications</h1>
+  <div class="section">{{ auditor_flags | safe }}</div>
   {% endif %}
 
   <h1>5-Year Financial Trend</h1>
@@ -146,41 +128,10 @@
   <p class="section">5-year trend table not available (insufficient data).</p>
   {% endif %}
 
-  {% if qoq_highlights and (qoq_highlights.good or qoq_highlights.bad) %}
-  <h2>Balance Sheet Highlights (TTM)</h2>
-  <div class="qoq-highlights">
-    {% if qoq_highlights.good %}
-    <div class="qoq-highlight-good">
-      <strong>Strengths</strong>
-      <ul>
-        {% for point in qoq_highlights.good %}
-        <li>{{ point | e }}</li>
-        {% endfor %}
-      </ul>
-    </div>
-    {% endif %}
-    {% if qoq_highlights.bad %}
-    <div class="qoq-highlight-bad">
-      <strong>Concerns</strong>
-      <ul>
-        {% for point in qoq_highlights.bad %}
-        <li>{{ point | e }}</li>
-        {% endfor %}
-      </ul>
-    </div>
-    {% endif %}
-  </div>
-  {% endif %}
-
-  {% if auditor_flags %}
-  <h1>⚠ Auditor Flags & Qualifications</h1>
-  <div class="section">{{ auditor_flags | safe }}</div>
-  {% endif %}
-
-  <h1>{{ concall_section_title or "Concall Evaluation" }}</h1>
+  <h1>{{ concall_section_title or "Concall evaluation" }}</h1>
   <div class="section">{{ concall_evaluation | safe }}</div>
 
-  <h1>Sectoral Headwinds & Tailwinds</h1>
+  <h1>Sectoral headwinds & tailwinds</h1>
   <div class="section">{{ sectoral_intro | safe }}</div>
   <div class="sectoral-two-col">
     <div class="sectoral-col sectoral-tailwinds">
@@ -192,5 +143,33 @@
       {{ sectoral_headwinds_html | safe }}
     </div>
   </div>
+
+  <h1>Green & red flags in financial data</h1>
+  {% if qoq_highlights and (qoq_highlights.good or qoq_highlights.bad) %}
+  <div class="qoq-highlights flags-section">
+    {% if qoq_highlights.good %}
+    <div class="qoq-highlight-good">
+      <strong>Green flags</strong>
+      <ul>
+        {% for point in qoq_highlights.good %}
+        <li>{{ point | e }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+    {% if qoq_highlights.bad %}
+    <div class="qoq-highlight-bad">
+      <strong>Red flags</strong>
+      <ul>
+        {% for point in qoq_highlights.bad %}
+        <li>{{ point | e }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+  </div>
+  {% else %}
+  <p class="section">No green or red flags data available.</p>
+  {% endif %}
 </body>
 </html>

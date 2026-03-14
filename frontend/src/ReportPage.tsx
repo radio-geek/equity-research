@@ -22,6 +22,7 @@ export default function ReportPage() {
   const [error, setError] = useState<string | null>(null)
   const [reportView, setReportView] = useState<ReportView | null>(null)
   const [pdfLoading, setPdfLoading] = useState(false)
+  const [pdfError, setPdfError] = useState<string | null>(null)
   const [showDownloadLoginModal, setShowDownloadLoginModal] = useState(false)
   const [feedbackSent, setFeedbackSent] = useState<'up' | 'down' | null>(null)
   const [feedbackComment, setFeedbackComment] = useState('')
@@ -89,6 +90,7 @@ const handleDownloadPdf = async () => {
       setShowDownloadLoginModal(true)
       return
     }
+    setPdfError(null)
     setPdfLoading(true)
     try {
       const blob = await getReportPdfBlob(reportId)
@@ -98,8 +100,10 @@ const handleDownloadPdf = async () => {
       a.download = `equity-report-${decodedSymbol}.pdf`
       a.click()
       URL.revokeObjectURL(url)
-    } catch {
-      setShowDownloadLoginModal(true)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Download failed'
+      if (msg === 'Unauthorized') setShowDownloadLoginModal(true)
+      else setPdfError(msg)
     } finally {
       setPdfLoading(false)
     }
@@ -144,14 +148,24 @@ const handleDownloadPdf = async () => {
           </button>
           {showReport && (
             <div className="report-actions">
-              <button
-                type="button"
-                className="report-download-btn"
-                onClick={handleDownloadPdf}
-                disabled={pdfLoading}
-              >
-                {pdfLoading ? '…' : '↓ Download PDF'}
-              </button>
+              <div className="report-actions-pdf">
+                <button
+                  type="button"
+                  className="report-download-btn"
+                  onClick={handleDownloadPdf}
+                  disabled={pdfLoading}
+                >
+                  {pdfLoading ? '…' : '↓ Download PDF'}
+                </button>
+                {pdfError && (
+                  <div className="report-pdf-error" role="alert">
+                    <span>{pdfError}</span>
+                    <button type="button" className="report-pdf-error-dismiss" onClick={() => setPdfError(null)} aria-label="Dismiss">
+                      ×
+                    </button>
+                  </div>
+                )}
+              </div>
               <div className="report-feedback">
                 <span className="feedback-label">Helpful?</span>
                 <button

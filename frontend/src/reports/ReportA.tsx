@@ -10,12 +10,6 @@ import { SectoralCard } from '../components/SectoralCard'
 import { ValueChainFlowchart } from '../components/ValueChainFlowchart'
 import { useAuth } from '../contexts/AuthContext'
 
-const verdictTierStyles = {
-  strong: { bg: 'var(--green)', label: '#047857', wrapBg: 'rgba(5, 150, 105, 0.12)', border: 'var(--green)' },
-  average: { bg: '#d97706', label: '#b45309', wrapBg: 'rgba(217, 119, 6, 0.12)', border: '#d97706' },
-  weak: { bg: 'var(--red)', label: '#b91c1c', wrapBg: 'rgba(220, 38, 38, 0.12)', border: 'var(--red)' },
-} as const
-
 const auditTypeBadgeBg: Record<string, string> = {
   'qualified opinion': '#b71c1c',
   'emphasis of matter': '#e65100',
@@ -102,62 +96,6 @@ function AuditorTimelineView({ summary, events }: { summary?: string; events: Au
             </div>
           )
         })}
-      </div>
-    </div>
-  )
-}
-
-function FinancialScorecard({ scorecard }: { scorecard: NonNullable<ReportView['financialScorecard']> }) {
-  const tier = (scorecard.verdictTier ?? 'average') as keyof typeof verdictTierStyles
-  const style = verdictTierStyles[tier] ?? verdictTierStyles.average
-  return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: '1.25rem 1.5rem', background: 'var(--surface)', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-      <p style={{ fontSize: '0.875rem', color: 'var(--textMuted)', margin: '0 0 1rem 0' }}>
-        30-second health check across 6 core signals (TTM and YoY).
-      </p>
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '1.25rem', marginBottom: '1rem', paddingBottom: '1rem', borderBottom: '1px solid var(--border)' }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>
-          <span
-            style={{
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 44, height: 44,
-              fontSize: '1.5rem', fontWeight: 700, borderRadius: 10, background: style.bg, color: '#fff',
-            }}
-          >
-            {scorecard.letterGrade ?? '—'}
-          </span>
-          <span style={{ fontSize: '1.125rem', fontWeight: 600, color: 'var(--text)' }}>
-            {scorecard.score} / {scorecard.total}
-          </span>
-        </div>
-        <div style={{ flex: 1, minWidth: 220, padding: '0.5rem 0.75rem', borderRadius: 8, background: style.wrapBg, borderLeft: `4px solid ${style.border}` }}>
-          <span style={{ fontWeight: 600, fontSize: '0.9rem', color: style.label, marginRight: '0.35rem' }}>Verdict:</span>
-          <span style={{ fontSize: '0.95rem', color: 'var(--text)' }}>{scorecard.verdict}</span>
-        </div>
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-        {scorecard.metrics?.map((m) => (
-          <div
-            key={m.name}
-            style={{
-              display: 'grid', gridTemplateColumns: '1fr auto auto auto', alignItems: 'center', gap: '0.75rem',
-              padding: '0.5rem 0.6rem', borderRadius: 8, fontSize: '0.95rem',
-              background: m.passed ? 'rgba(5, 150, 105, 0.08)' : 'rgba(220, 38, 38, 0.08)',
-              borderLeft: `3px solid ${m.passed ? 'var(--green)' : 'var(--red)'}`,
-            }}
-          >
-            <span style={{ fontWeight: 600, color: 'var(--text)' }}>{m.name}</span>
-            <span style={{ color: 'var(--text)' }}>{m.display_value}</span>
-            {m.signal && <span style={{ color: 'var(--textMuted)', fontSize: '0.85rem' }}>({m.signal})</span>}
-            <span
-              style={{
-                fontSize: '0.8rem', fontWeight: 600, padding: '0.2rem 0.5rem', borderRadius: 6, justifySelf: 'end',
-                background: m.passed ? 'var(--green)' : 'var(--red)', color: '#fff',
-              }}
-            >
-              {m.passed ? 'Pass' : 'Needs improvement'}
-            </span>
-          </div>
-        ))}
       </div>
     </div>
   )
@@ -437,11 +375,6 @@ export function ReportA({ report }: ReportAProps) {
 
       {isAuthenticated ? (
         <>
-          {report.financialScorecard && (
-            <Section title="Financial Strength Scorecard">
-              <FinancialScorecard scorecard={report.financialScorecard} />
-            </Section>
-          )}
           {report.fiveYearTrend?.headers?.length ? (
             <Section title="5-Year Financial Trend">
               <p style={{ fontSize: '0.9rem', color: 'var(--textMuted)', marginBottom: '1rem' }}>
@@ -488,11 +421,6 @@ export function ReportA({ report }: ReportAProps) {
         </>
       ) : (
         <>
-          {report.financialScorecard && (
-            <Section title="Financial Strength Scorecard">
-              <FinancialScorecard scorecard={report.financialScorecard} />
-            </Section>
-          )}
           {report.fiveYearTrend?.headers?.length ? (
             <Section title="5-Year Financial Trend">
               <p style={{ fontSize: '0.9rem', color: 'var(--textMuted)', marginBottom: '1rem' }}>

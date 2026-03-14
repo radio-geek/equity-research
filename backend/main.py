@@ -260,13 +260,11 @@ async def api_reports_pdf(report_id: str, current_user: dict = Depends(get_curre
     meta = payload.get("meta") or {}
     symbol = (meta.get("symbol") or "report").upper()
     try:
-        pdf_bytes = render_payload_to_pdf(payload)
+        # Run in thread so sync Playwright is not inside the asyncio loop
+        pdf_bytes = await asyncio.to_thread(render_payload_to_pdf, payload)
     except Exception as e:
         log_error("pdf_download", f"PDF render failed for {symbol}: {e}", exc=e, symbol=symbol)
-        raise HTTPException(
-            status_code=500,
-            detail="PDF generation failed. If using WeasyPrint, install system libraries (e.g. on macOS: brew install pango cairo).",
-        ) from e
+        raise HTTPException(status_code=500, detail=str(e)) from e
     if not pdf_bytes:
         log_error("pdf_download", f"PDF render returned empty bytes for {symbol}", symbol=symbol)
         raise HTTPException(status_code=500, detail="PDF generation failed")

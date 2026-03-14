@@ -325,7 +325,17 @@ export async function getReportPdfBlob(reportId: string): Promise<Blob> {
     clearToken()
     throw new Error('Unauthorized')
   }
-  if (!res.ok) throw new Error(res.statusText)
+  if (!res.ok) {
+    const text = await res.text()
+    let message = res.statusText
+    try {
+      const j = JSON.parse(text) as { detail?: string | { msg?: string } }
+      if (j.detail) message = typeof j.detail === 'string' ? j.detail : (j.detail?.msg ?? res.statusText)
+    } catch {
+      if (text) message = text.slice(0, 200)
+    }
+    throw new Error(message)
+  }
   return res.blob()
 }
 
