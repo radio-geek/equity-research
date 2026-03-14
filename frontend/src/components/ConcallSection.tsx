@@ -74,19 +74,13 @@ function isMissing(badge?: string) {
   return badge === 'missing' || badge === 'sme-missing'
 }
 
-function extractFY(period: string): string {
-  const match = period.match(/FY(\d+)/i)
-  return match ? `FY${match[1]}` : 'Other'
-}
-
-function groupCardsByFY(cards: CardData[]): Array<[string, CardData[]]> {
-  const map = new Map<string, CardData[]>()
-  for (const card of cards) {
-    const fy = extractFY(card.period || '')
-    if (!map.has(fy)) map.set(fy, [])
-    map.get(fy)!.push(card)
-  }
-  return Array.from(map.entries())
+function groupCardsIntoTwo(cards: CardData[]): Array<[string, CardData[]]> {
+  if (cards.length === 0) return []
+  const recent = cards.slice(0, 4)
+  const older = cards.slice(4)
+  const groups: Array<[string, CardData[]]> = [['Recent quarters', recent]]
+  if (older.length > 0) groups.push(['Older quarters', older])
+  return groups
 }
 
 /**
@@ -409,7 +403,7 @@ export function ConcallSection({ concall, concallUpdatesFallback, style = {} }: 
   const sources = (concall.sources as Array<{ period?: string; source?: string }>) ?? []
 
   const processedCards = processCards(cards)
-  const grouped = groupCardsByFY(processedCards).filter(([, fyCards]) => fyCards.some(c => !isMissing(c.badge)))
+  const grouped = groupCardsIntoTwo(processedCards).filter(([, grpCards]) => grpCards.some((c: CardData) => !isMissing(c.badge)))
 
   return (
     <div className="concall-section" style={{ marginBottom: '2rem', ...style }}>
