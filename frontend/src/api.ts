@@ -372,3 +372,22 @@ export async function submitFeedback(body: FeedbackRequest): Promise<{ ok: boole
   }
   return res.json()
 }
+
+export interface DetailedFeedbackRequest {
+  symbol: string
+  section_ratings: Record<string, number>
+  suggestion?: string | null
+}
+
+export async function submitDetailedFeedback(body: DetailedFeedbackRequest): Promise<{ ok: boolean }> {
+  const res = await fetch(`${API_BASE}/api/feedback/detailed`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail ?? res.statusText)
+  }
+  return res.json()
+}

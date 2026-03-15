@@ -4,10 +4,10 @@ import {
   createReport,
   getReportStatus,
   getReportPdfBlob,
-  submitFeedback,
   mapReportPayloadToView,
   type ReportView,
 } from './api'
+import { FeedbackModal } from './components/FeedbackModal'
 import { trackEvent } from './analytics'
 import { useAuth } from './contexts/AuthContext'
 import { ReportA } from './reports/ReportA'
@@ -25,9 +25,7 @@ export default function ReportPage() {
   const [pdfLoading, setPdfLoading] = useState(false)
   const [pdfError, setPdfError] = useState<string | null>(null)
   const [showDownloadLoginModal, setShowDownloadLoginModal] = useState(false)
-  const [feedbackSent, setFeedbackSent] = useState<'up' | 'down' | null>(null)
-  const [feedbackComment, setFeedbackComment] = useState('')
-  const [showFeedbackComment, setShowFeedbackComment] = useState(false)
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval>>()
 
   const decodedSymbol = symbol ? decodeURIComponent(symbol).toUpperCase() : ''
@@ -112,33 +110,6 @@ const handleDownloadPdf = async () => {
     }
   }
 
-  const handleFeedback = async (rating: 'up' | 'down') => {
-    if (!reportId || feedbackSent) return
-    if (rating === 'down') {
-      setShowFeedbackComment(true)
-      return
-    }
-    try {
-      await submitFeedback({ report_id: reportId, rating })
-      setFeedbackSent('up')
-      trackEvent('Feedback', { rating: 'up', symbol: decodedSymbol })
-    } catch {
-      // ignore
-    }
-  }
-
-  const handleSubmitFeedbackWithComment = async () => {
-    if (!reportId || feedbackSent) return
-    try {
-      await submitFeedback({ report_id: reportId, rating: 'down', comment: feedbackComment || undefined })
-      setFeedbackSent('down')
-      setShowFeedbackComment(false)
-      trackEvent('Feedback', { rating: 'down', symbol: decodedSymbol })
-    } catch {
-      // ignore
-    }
-  }
-
   const showLoader = status === 'pending' || status === 'running'
   const showReport = status === 'completed' && reportView
 
@@ -172,24 +143,13 @@ const handleDownloadPdf = async () => {
                 )}
               </div>
               <div className="report-feedback">
-                <span className="feedback-label">Helpful?</span>
                 <button
                   type="button"
-                  className="feedback-btn feedback-up"
-                  onClick={() => handleFeedback('up')}
-                  disabled={feedbackSent !== null}
-                  aria-label="Thumbs up"
+                  className="feedback-btn"
+                  onClick={() => setShowFeedbackModal(true)}
+                  aria-label="Give feedback"
                 >
-                  👍
-                </button>
-                <button
-                  type="button"
-                  className="feedback-btn feedback-down"
-                  onClick={() => handleFeedback('down')}
-                  disabled={feedbackSent !== null}
-                  aria-label="Thumbs down"
-                >
-                  👎
+                  Feedback
                 </button>
               </div>
             </div>
@@ -197,25 +157,6 @@ const handleDownloadPdf = async () => {
         </div>
         <h1>{decodedSymbol}</h1>
         <p className="report-subtitle">Equity Research Report</p>
-        {showReport && showFeedbackComment && (
-          <div className="feedback-comment-wrap">
-            <textarea
-              className="feedback-comment"
-              placeholder="Optional: tell us what we could improve…"
-              value={feedbackComment}
-              onChange={(e) => setFeedbackComment(e.target.value)}
-              rows={2}
-            />
-            <div className="feedback-comment-actions">
-              <button type="button" className="feedback-cancel" onClick={() => setShowFeedbackComment(false)}>
-                Cancel
-              </button>
-              <button type="button" className="feedback-submit" onClick={handleSubmitFeedbackWithComment}>
-                Send feedback
-              </button>
-            </div>
-          </div>
-        )}
       </header>
 
       {status === 'failed' && error && (
@@ -246,6 +187,10 @@ const handleDownloadPdf = async () => {
         <div className="report-container">
           <ReportA report={reportView!} />
         </div>
+      )}
+
+      {showFeedbackModal && (
+        <FeedbackModal symbol={decodedSymbol} onClose={() => setShowFeedbackModal(false)} />
       )}
 
       {showDownloadLoginModal && (

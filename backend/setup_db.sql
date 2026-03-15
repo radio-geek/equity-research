@@ -114,6 +114,25 @@ CREATE INDEX IF NOT EXISTS idx_feedback_report_id ON feedback (report_id);
 
 
 -- ---------------------------------------------------------------------------
+-- TABLE: section_feedback
+-- Per-section star ratings (1-5) and optional suggestion text on reports.
+-- section_ratings is a JSONB object: { "section_name": rating_int, ... }
+-- user_id is nullable (anonymous allowed).
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS section_feedback (
+  id               BIGSERIAL PRIMARY KEY,
+  symbol           TEXT NOT NULL,
+  user_id          INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  section_ratings  JSONB NOT NULL DEFAULT '{}',
+  suggestion       TEXT,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_section_feedback_symbol  ON section_feedback (symbol);
+CREATE INDEX IF NOT EXISTS idx_section_feedback_user_id ON section_feedback (user_id);
+
+
+-- ---------------------------------------------------------------------------
 -- TABLE: error_logs
 -- Application-level errors from all pipeline nodes.
 -- node = identifier like 'report_generate', 'auth_signin', 'pdf_download'
@@ -145,5 +164,5 @@ CREATE INDEX IF NOT EXISTS idx_error_logs_created_at ON error_logs (created_at D
 
 -- ---------------------------------------------------------------------------
 -- Done. Tables created:
---   users, sessions, reports, concall_transcripts, feedback, error_logs
+--   users, sessions, reports, concall_transcripts, feedback, section_feedback, error_logs
 -- ---------------------------------------------------------------------------

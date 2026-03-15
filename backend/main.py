@@ -41,6 +41,7 @@ from backend.auth import (
 )
 from backend.error_store import log_error
 from backend.feedback_store import append_feedback
+from backend.section_feedback_store import append_section_feedback
 from backend.job_store import create_job_store, get as job_get, set_pending
 from backend.pdf_render import render_payload_to_pdf
 from backend.reports import get_report_status, start_report
@@ -292,4 +293,19 @@ async def api_feedback(body: FeedbackRequest, request: Request):
     user = get_current_user_optional(request)
     user_id = user["id"] if user else None
     append_feedback(body.report_id, rating, body.comment, user_id=user_id)
+    return {"ok": True}
+
+
+class DetailedFeedbackRequest(BaseModel):
+    symbol: str
+    section_ratings: dict  # { "section_name": rating_int }
+    suggestion: str | None = None
+
+
+@app.post("/api/feedback/detailed")
+async def api_feedback_detailed(body: DetailedFeedbackRequest, request: Request):
+    """Store per-section star ratings and optional suggestion. User optional."""
+    user = get_current_user_optional(request)
+    user_id = user["id"] if user else None
+    append_section_feedback(body.symbol, body.section_ratings, body.suggestion, user_id=user_id)
     return {"ok": True}
