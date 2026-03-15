@@ -438,7 +438,7 @@ export function ReportA({ report }: ReportAProps) {
           ) : null}
           <ConcallSection concall={report.concall ?? null} concallUpdatesFallback={report.concallUpdates} />
           <Section title="Sectoral headwinds & tailwinds">
-            <SectoralCard headwinds={report.sectoralHeadwinds} tailwinds={report.sectoralTailwinds} />
+            <SectoralCard headwinds={report.sectoralHeadwinds} tailwinds={report.sectoralTailwinds} source={report.sectoralSource} />
           </Section>
           <Section title="Green & red flags in financial data">
             <FlagsList greenFlags={report.greenFlags} redFlags={report.redFlags} />
@@ -501,7 +501,7 @@ export function ReportA({ report }: ReportAProps) {
           <Section title="Sectoral headwinds & tailwinds">
             <div className="report-gated-wrap">
               <div className="report-gated-blur" aria-hidden>
-                <SectoralCard headwinds={report.sectoralHeadwinds} tailwinds={report.sectoralTailwinds} />
+                <SectoralCard headwinds={report.sectoralHeadwinds} tailwinds={report.sectoralTailwinds} source={report.sectoralSource} />
               </div>
               <div className="report-gated-overlay">
                 <span className="report-gated-lock" aria-hidden>

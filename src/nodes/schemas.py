@@ -124,6 +124,18 @@ class SectoralStructured(BaseModel):
     )
 
 
+class SectoralFromTranscripts(BaseModel):
+    """Headwinds/tailwinds extracted directly from concall transcript text."""
+    headwinds: list[str] = Field(
+        default_factory=list,
+        description="Challenges/risks management explicitly mentioned",
+    )
+    tailwinds: list[str] = Field(
+        default_factory=list,
+        description="Opportunities/growth drivers management explicitly mentioned",
+    )
+
+
 # --- Auditor flags ---
 
 

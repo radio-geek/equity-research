@@ -64,10 +64,12 @@ def _build_report_payload(state: ResearchState) -> dict[str, Any]:
     sectoral_analysis = state.get("sectoral_analysis") or ""
     sectoral_headwinds = state.get("sectoral_headwinds")
     sectoral_tailwinds = state.get("sectoral_tailwinds")
+    sectoral_source = state.get("sectoral_source") or "web_search"
     payload["sectoral"] = {
         "analysis": sectoral_analysis,
         "headwinds": sectoral_headwinds if isinstance(sectoral_headwinds, list) else [],
         "tailwinds": sectoral_tailwinds if isinstance(sectoral_tailwinds, list) else [],
+        "source": sectoral_source,
     }
 
     financial_ratios = state.get("financial_ratios")
