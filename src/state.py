@@ -57,6 +57,7 @@ class ResearchState(TypedDict, total=False):
     sectoral_analysis: str
     sectoral_headwinds: NotRequired[list[str]]
     sectoral_tailwinds: NotRequired[list[str]]
+    sectoral_source: NotRequired[str]  # "management_commentary" | "management_commentary_and_web_search" | "web_search"
     executive_summary: NotRequired[str]
 
     # Structured concall (schema-aligned object for report payload)

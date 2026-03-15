@@ -771,13 +771,12 @@ def concall_structured_prompt(
         data_source_note = (
             f"You have been provided with {len(transcripts)} actual concall/earnings transcript(s) "
             f"fetched directly from NSE filings. Company type is {company_type_hint}. "
-            f"These transcripts cover the following quarters: {covered_str}. "
-            "For these quarters, extract data STRICTLY from the provided transcript text — do not web search or hallucinate. "
-            "IMPORTANT: These transcripts represent ALL NSE concall filings found for this company. "
-            "For any quarter in the 8-quarter window NOT in the covered list above, the company did NOT hold a concall. "
-            "Set badge to 'missing' for those quarters. "
-            "You may use web search only to check if a press release or investor presentation exists (use 'press-release' or 'ppt' badge). "
-            "NEVER assign badge 'concall' to a quarter not in the covered list."
+            f"Transcripts provided for these quarters: {covered_str}. "
+            "BADGE RULE: badge is determined solely by whether a transcript was provided above — "
+            "if a transcript exists for that quarter, badge = 'concall' (do not downgrade to missing/ppt/press-release); "
+            "if NO transcript exists for that quarter, badge = 'missing' "
+            "(you may use web search to check for a press release or presentation and upgrade to 'press-release'/'ppt' only). "
+            "Extract content STRICTLY from the provided transcript text for covered quarters — do not web search or hallucinate."
         )
     else:
         transcript_block = ""
@@ -951,6 +950,24 @@ def sectoral_prompt(company_name: str, sector: str) -> tuple[str, str]:
         "Each headwind and tailwind must be a concise bullet (one factor per item). "
         "Include source links in markdown format [Source](url) wherever possible to build credibility."
     )
+    return system, user
+
+
+def sectoral_from_transcripts_prompt(company_name: str, transcript_block: str) -> tuple[str, str]:
+    """Extract headwinds/tailwinds from concall transcripts without web search."""
+    system = (
+        "You are an equity research analyst. Read the provided concall/earnings transcripts "
+        "and extract what management explicitly said about: "
+        "(1) challenges, risks, or headwinds facing the business or sector, "
+        "(2) opportunities, growth drivers, or tailwinds mentioned by management. "
+        "Only include points that management explicitly discussed — do not infer or add macro context. "
+        "Return ONLY a JSON object with keys: "
+        '"headwinds" (array of 0–6 strings; each is a direct paraphrase of what management said), '
+        '"tailwinds" (array of 0–6 strings; same format). '
+        "If management did not mention headwinds or tailwinds, return empty arrays. "
+        "No code fences, no text outside the JSON."
+    )
+    user = f"Company: {company_name}\n\n{transcript_block}"
     return system, user
 
 

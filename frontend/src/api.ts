@@ -132,6 +132,7 @@ export interface ReportPayload {
     analysis?: string
     headwinds?: string[]
     tailwinds?: string[]
+    source?: string
   }
   financials?: {
     ratios?: Array<{ metric?: string; value?: number | string; period?: string }>
@@ -205,6 +206,7 @@ export interface ReportView {
   trendInsightSummary?: string
   sectoralHeadwinds?: string[]
   sectoralTailwinds?: string[]
+  sectoralSource?: string
   greenFlags?: string[]
   redFlags?: string[]
   screenerQuote?: { currentPrice?: number; priceChangePct?: string; marketCap?: string; stockPe?: number; lastPriceUpdated?: string }
@@ -297,6 +299,7 @@ export function mapReportPayloadToView(payload: ReportPayload | null | undefined
     trendInsightSummary: financials.trend_insight_summary ?? undefined,
     sectoralHeadwinds: sectoral.headwinds ?? [],
     sectoralTailwinds: sectoral.tailwinds ?? [],
+    sectoralSource: sectoral.source ?? 'web_search',
     greenFlags: highlights.good ?? [],
     redFlags: highlights.bad ?? [],
     screenerQuote: (() => {
