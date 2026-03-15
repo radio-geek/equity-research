@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { suggest, type SymbolSuggestion } from './api'
+import { trackEvent } from './analytics'
 import { INDICES, REVIEWS } from './landingData'
 
 const DEBOUNCE_MS = 280
@@ -50,6 +51,7 @@ export default function Landing() {
 
   const select = (s: SymbolSuggestion) => {
     setOpen(false)
+    trackEvent('Report Requested', { symbol: s.symbol })
     navigate(`/${encodeURIComponent(s.symbol)}/report`)
   }
 
