@@ -8,6 +8,7 @@ import {
   mapReportPayloadToView,
   type ReportView,
 } from './api'
+import { trackEvent } from './analytics'
 import { useAuth } from './contexts/AuthContext'
 import { ReportA } from './reports/ReportA'
 
@@ -62,6 +63,7 @@ export default function ReportPage() {
         if (s.status === 'completed' && s.report) {
           const view = mapReportPayloadToView(s.report)
           setReportView(view)
+          trackEvent('Report Viewed', { symbol: decodedSymbol })
           if (pollRef.current) {
             clearInterval(pollRef.current)
             pollRef.current = undefined
@@ -100,6 +102,7 @@ const handleDownloadPdf = async () => {
       a.download = `equity-report-${decodedSymbol}.pdf`
       a.click()
       URL.revokeObjectURL(url)
+      trackEvent('PDF Downloaded', { symbol: decodedSymbol })
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Download failed'
       if (msg === 'Unauthorized') setShowDownloadLoginModal(true)
@@ -118,6 +121,7 @@ const handleDownloadPdf = async () => {
     try {
       await submitFeedback({ report_id: reportId, rating })
       setFeedbackSent('up')
+      trackEvent('Feedback', { rating: 'up', symbol: decodedSymbol })
     } catch {
       // ignore
     }
@@ -129,6 +133,7 @@ const handleDownloadPdf = async () => {
       await submitFeedback({ report_id: reportId, rating: 'down', comment: feedbackComment || undefined })
       setFeedbackSent('down')
       setShowFeedbackComment(false)
+      trackEvent('Feedback', { rating: 'down', symbol: decodedSymbol })
     } catch {
       // ignore
     }
