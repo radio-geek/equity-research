@@ -8,7 +8,7 @@ parsing and validating JSON from the LLM. See:
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -154,3 +154,61 @@ class AuditorFlagsStructured(BaseModel):
         default_factory=list,
         description="Chronological list of audit-related events",
     )
+
+
+# --- Concall per-transcript extraction ---
+
+
+class ConcallEventItem(BaseModel):
+    """One major event announced in a concall."""
+    type: str = Field(
+        ...,
+        description="acquisition|fundraise|stake_sale|capex|order_win|mgmt_change|guidance_change",
+    )
+    headline: str = Field(..., description="Short headline ≤12 words")
+    details: list[str] = Field(default_factory=list)
+
+
+class ConcallQAItem(BaseModel):
+    """One Q&A highlight from a concall."""
+    q: str
+    a: str
+
+
+class ConcallCapexItem(BaseModel):
+    """One capex project mentioned in a concall."""
+    project: str
+    amount: str
+    funding: str = ""
+
+
+class ConcallCardExtraction(BaseModel):
+    """Content extracted from a single concall transcript."""
+
+    bullets: list[str] = Field(
+        default_factory=list,
+        description="6-9 highlights: financial first, then operational",
+    )
+    events: list[ConcallEventItem] = Field(default_factory=list)
+    qaHighlights: list[ConcallQAItem] = Field(default_factory=list)
+    guidance: Optional[str] = None
+    capex: list[ConcallCapexItem] = Field(default_factory=list)
+
+
+class GuidanceCell(BaseModel):
+    """One cell in the guidance table."""
+    value: str
+    trend: Literal["raised", "cut", "maintained", "neutral"] = "neutral"
+
+
+class GuidanceRow(BaseModel):
+    """One row in the guidance table (one metric across quarters)."""
+    metric: str
+    cells: list[GuidanceCell]
+
+
+class ConcallSummaryExtraction(BaseModel):
+    """Summary and guidance table assembled from all extracted cards."""
+
+    summary: str = Field(..., description="One sentence overall summary of recent concall trends")
+    guidance_table_rows: list[GuidanceRow] = Field(default_factory=list)

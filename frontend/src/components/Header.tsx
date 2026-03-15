@@ -20,6 +20,7 @@ export default function Header() {
 
   return (
     <header className="app-header">
+      <div className="app-header-inner">
       <span className="app-header-logo">Equity Research</span>
 
       <div className="app-header-auth">
@@ -100,6 +101,7 @@ export default function Header() {
             Sign in with Google
           </button>
         )}
+      </div>
       </div>
     </header>
   )

@@ -391,3 +391,17 @@ export async function submitDetailedFeedback(body: DetailedFeedbackRequest): Pro
   }
   return res.json()
 }
+
+export interface IndexTick {
+  name: string
+  value: string
+  change: string
+  positive: boolean
+}
+
+export async function getMarketIndices(): Promise<IndexTick[]> {
+  const res = await fetch(`${API_BASE}/api/market-indices`)
+  if (!res.ok) throw new Error('Failed to fetch market indices')
+  const data = await res.json()
+  return data.indices as IndexTick[]
+}

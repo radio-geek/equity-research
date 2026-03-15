@@ -525,12 +525,21 @@ def render_payload_to_html(payload: dict) -> str:
 
 
 def _chromium_executable() -> str | None:
-    """Path to minimal Chromium (Sparticuz bundle). Prefer CHROMIUM_PATH env, else /opt/chromium/chromium."""
+    """Path to minimal Chromium (Sparticuz bundle).
+
+    Resolution order:
+    1. CHROMIUM_PATH env var (explicit override)
+    2. /opt/chromium/chromium  — Render / Docker / build.sh path
+    3. /var/task/chromium-bin/chromium — Vercel Lambda (project-relative download)
+    4. None → Playwright uses its own installed browser (local dev)
+    """
     path = os.environ.get("CHROMIUM_PATH")
     if path and os.path.isfile(path):
         return path
-    default = "/opt/chromium/chromium"
-    return default if os.path.isfile(default) else None
+    for candidate in ("/opt/chromium/chromium", "/var/task/chromium-bin/chromium"):
+        if os.path.isfile(candidate):
+            return candidate
+    return None
 
 
 def _pdf_playwright(payload: dict) -> bytes | None:

@@ -8,11 +8,22 @@ import {
   type ReportView,
 } from './api'
 import { FeedbackModal } from './components/FeedbackModal'
+import { useToast, ToastContainer } from './components/Toast'
 import { trackEvent } from './analytics'
 import { useAuth } from './contexts/AuthContext'
 import { ReportA } from './reports/ReportA'
 
 const POLL_INTERVAL_MS = 2500
+
+const SECTION_NAVS = [
+  { id: 'section-overview',   label: 'Overview' },
+  { id: 'section-management', label: 'Management' },
+  { id: 'section-auditor',    label: 'Auditor' },
+  { id: 'section-financials', label: 'Financials' },
+  { id: 'section-concall',    label: 'Concalls' },
+  { id: 'section-sectoral',   label: 'Sectoral' },
+  { id: 'section-flags',      label: 'Flags' },
+]
 
 export default function ReportPage() {
   const { symbol } = useParams<{ symbol: string }>()
@@ -23,10 +34,13 @@ export default function ReportPage() {
   const [error, setError] = useState<string | null>(null)
   const [reportView, setReportView] = useState<ReportView | null>(null)
   const [pdfLoading, setPdfLoading] = useState(false)
-  const [pdfError, setPdfError] = useState<string | null>(null)
   const [showDownloadLoginModal, setShowDownloadLoginModal] = useState(false)
+  const { toasts, addToast, addPersistentToast, dismiss } = useToast()
   const [showFeedbackModal, setShowFeedbackModal] = useState(false)
+  const [scrolled, setScrolled] = useState(false)
+  const [activeSection, setActiveSection] = useState('')
   const pollRef = useRef<ReturnType<typeof setInterval>>()
+  const headerRef = useRef<HTMLElement>(null)
 
   const decodedSymbol = symbol ? decodeURIComponent(symbol).toUpperCase() : ''
 
@@ -84,14 +98,31 @@ export default function ReportPage() {
     }
   }, [reportId, status])
 
-const handleDownloadPdf = async () => {
+  useEffect(() => {
+    const STICKY_H = 92 // approx height of two-row sticky nav
+    const onScroll = () => {
+      const h = headerRef.current?.offsetHeight ?? 120
+      setScrolled(window.scrollY > h)
+      // Scrollspy: last section whose top is above the sticky nav threshold
+      let active = ''
+      for (const { id } of SECTION_NAVS) {
+        const el = document.getElementById(id)
+        if (el && el.getBoundingClientRect().top <= STICKY_H + 24) active = id
+      }
+      setActiveSection(active)
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
+  const handleDownloadPdf = async () => {
     if (!reportId) return
     if (!isAuthenticated) {
       setShowDownloadLoginModal(true)
       return
     }
-    setPdfError(null)
     setPdfLoading(true)
+    const loadingToastId = addPersistentToast('Brewing your report, hang tight…', 'info')
     try {
       const blob = await getReportPdfBlob(reportId)
       const url = URL.createObjectURL(blob)
@@ -101,13 +132,23 @@ const handleDownloadPdf = async () => {
       a.click()
       URL.revokeObjectURL(url)
       trackEvent('PDF Downloaded', { symbol: decodedSymbol })
+      dismiss(loadingToastId)
+      addToast('PDF downloaded successfully', 'success')
     } catch (e) {
+      dismiss(loadingToastId)
       const msg = e instanceof Error ? e.message : 'Download failed'
       if (msg === 'Unauthorized') setShowDownloadLoginModal(true)
-      else setPdfError(msg)
+      else addToast(msg, 'error')
     } finally {
       setPdfLoading(false)
     }
+  }
+
+  const scrollToSection = (id: string) => {
+    const el = document.getElementById(id)
+    if (!el) return
+    const top = el.getBoundingClientRect().top + window.scrollY - 100
+    window.scrollTo({ top, behavior: 'smooth' })
   }
 
   const showLoader = status === 'pending' || status === 'running'
@@ -117,7 +158,7 @@ const handleDownloadPdf = async () => {
 
   return (
     <div className="report-page">
-      <header className="report-header">
+      <header className="report-header" ref={headerRef}>
         <div className="report-header-top">
           <button type="button" className="back-btn" onClick={() => navigate('/')} aria-label="Back to search">
             ← Back
@@ -133,14 +174,6 @@ const handleDownloadPdf = async () => {
                 >
                   {pdfLoading ? '…' : '↓ Download PDF'}
                 </button>
-                {pdfError && (
-                  <div className="report-pdf-error" role="alert">
-                    <span>{pdfError}</span>
-                    <button type="button" className="report-pdf-error-dismiss" onClick={() => setPdfError(null)} aria-label="Dismiss">
-                      ×
-                    </button>
-                  </div>
-                )}
               </div>
               <div className="report-feedback">
                 <button
@@ -159,12 +192,53 @@ const handleDownloadPdf = async () => {
         <p className="report-subtitle">Equity Research Report</p>
       </header>
 
+      {showReport && scrolled && (
+        <div className="report-sticky-nav">
+          <div className="report-sticky-top">
+            <button type="button" className="back-btn" onClick={() => navigate('/')} aria-label="Back to search">
+              ← Back
+            </button>
+            <span className="report-sticky-symbol">{decodedSymbol}</span>
+            <div className="report-sticky-actions">
+              <button
+                type="button"
+                className="report-download-btn"
+                onClick={handleDownloadPdf}
+                disabled={pdfLoading}
+              >
+                {pdfLoading ? '…' : <><span>↓</span><span className="download-label"> Download PDF</span></>}
+              </button>
+              <button
+                type="button"
+                className="feedback-btn"
+                onClick={() => setShowFeedbackModal(true)}
+              >
+                Feedback
+              </button>
+            </div>
+          </div>
+          <div className="report-sticky-sections">
+            {SECTION_NAVS.map(({ id, label }) => (
+              <button
+                key={id}
+                type="button"
+                className={`report-sticky-section-btn${activeSection === id ? ' active' : ''}`}
+                onClick={() => scrollToSection(id)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {status === 'failed' && error && (
         <div className="report-error">
           <p>{error}</p>
           <button type="button" onClick={() => window.location.reload()}>Retry</button>
         </div>
       )}
+
 
       {showLoader && (
         <div className="report-loader" aria-live="polite">
@@ -192,6 +266,8 @@ const handleDownloadPdf = async () => {
       {showFeedbackModal && (
         <FeedbackModal symbol={decodedSymbol} onClose={() => setShowFeedbackModal(false)} />
       )}
+
+      <ToastContainer toasts={toasts} onDismiss={dismiss} />
 
       {showDownloadLoginModal && (
         <div

@@ -13,6 +13,7 @@ langchain-tavily>=0.2.0
 nse[local]>=2.1.0
 
 # Financials (Indian stocks; finfetch pulls yfinance, lxml, beautifulsoup4, requests, etc.)
+yfinance>=0.2.0
 finfetch>=0.2.0
 lxml>=5.0.0
 beautifulsoup4>=4.12.0

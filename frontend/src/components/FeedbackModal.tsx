@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { submitDetailedFeedback } from '../api'
 
 const REPORT_SECTIONS = [
@@ -53,6 +53,12 @@ function StarRating({
 }
 
 export function FeedbackModal({ symbol, onClose }: FeedbackModalProps) {
+  useEffect(() => {
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = prev }
+  }, [])
+
   const [ratings, setRatings] = useState<Record<string, number>>({})
   const [suggestion, setSuggestion] = useState('')
   const [phase, setPhase] = useState<'form' | 'submitting' | 'done'>('form')

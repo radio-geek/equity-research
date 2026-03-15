@@ -21,6 +21,19 @@ function AnalyticsInit() {
   return null
 }
 
+function Footer() {
+  return (
+    <footer className="app-footer">
+      <div className="app-footer-inner">
+        <p className="app-footer-disclaimer">
+          This report is for information purposes only and does not constitute investment advice or a recommendation.
+          For investment recommendations, please consult a SEBI registered investment advisor.
+        </p>
+      </div>
+    </footer>
+  )
+}
+
 export default function App() {
   return (
     <AuthProvider>
@@ -30,6 +43,7 @@ export default function App() {
         <Route path="/" element={<Landing />} />
         <Route path="/:symbol/report" element={<ReportPage />} />
       </Routes>
+      <Footer />
       <AnalyticsTracker />
     </AuthProvider>
   )

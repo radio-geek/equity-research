@@ -1,11 +1,13 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { suggest, type SymbolSuggestion } from './api'
+import { suggest, getMarketIndices, type SymbolSuggestion, type IndexTick } from './api'
 import { trackEvent } from './analytics'
-import { INDICES, REVIEWS } from './landingData'
+import { INDICES as STATIC_INDICES, REVIEWS } from './landingData'
 
 const DEBOUNCE_MS = 280
 const CAROUSEL_MS = 5000
+
+const REFRESH_MS = 60_000
 
 export default function Landing() {
   const [query, setQuery] = useState('')
@@ -14,9 +16,25 @@ export default function Landing() {
   const [open, setOpen] = useState(false)
   const [highlight, setHighlight] = useState(0)
   const [reviewIndex, setReviewIndex] = useState(0)
+  const [indices, setIndices] = useState<IndexTick[]>(STATIC_INDICES)
   const navigate = useNavigate()
   const debounceRef = useRef<ReturnType<typeof setTimeout>>()
   const listRef = useRef<HTMLUListElement>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      try {
+        const data = await getMarketIndices()
+        if (!cancelled && data.length > 0) setIndices(data)
+      } catch {
+        // keep static fallback
+      }
+    }
+    load()
+    const timer = setInterval(load, REFRESH_MS)
+    return () => { cancelled = true; clearInterval(timer) }
+  }, [])
 
   const fetchSuggestions = useCallback(async (q: string) => {
     if (!q.trim()) {
@@ -90,7 +108,7 @@ export default function Landing() {
     <div className="landing">
       <div className="landing-ticker">
         <div className="landing-ticker-inner">
-          {INDICES.map((idx) => (
+          {indices.map((idx) => (
             <span key={idx.name} className="landing-ticker-item">
               <span className="ticker-name">{idx.name}</span>
               <span className="ticker-value">{idx.value}</span>

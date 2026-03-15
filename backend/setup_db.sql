@@ -133,6 +133,25 @@ CREATE INDEX IF NOT EXISTS idx_section_feedback_user_id ON section_feedback (use
 
 
 -- ---------------------------------------------------------------------------
+-- TABLE: pdf_downloads
+-- One row per PDF download attempt — tracks requested / success / failed.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS pdf_downloads (
+  id            BIGSERIAL PRIMARY KEY,
+  symbol        TEXT        NOT NULL,
+  user_id       INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  status        TEXT        NOT NULL CHECK (status IN ('requested', 'success', 'failed')),
+  error_detail  TEXT,
+  duration_ms   INTEGER,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pdf_downloads_symbol     ON pdf_downloads (symbol);
+CREATE INDEX IF NOT EXISTS idx_pdf_downloads_user_id    ON pdf_downloads (user_id);
+CREATE INDEX IF NOT EXISTS idx_pdf_downloads_created_at ON pdf_downloads (created_at DESC);
+
+
+-- ---------------------------------------------------------------------------
 -- TABLE: error_logs
 -- Application-level errors from all pipeline nodes.
 -- node = identifier like 'report_generate', 'auth_signin', 'pdf_download'

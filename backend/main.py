@@ -44,6 +44,8 @@ from backend.feedback_store import append_feedback
 from backend.section_feedback_store import append_section_feedback
 from backend.job_store import create_job_store, get as job_get, set_pending
 from backend.pdf_render import render_payload_to_pdf
+from backend.pdf_download_store import log_pdf_download
+from backend.market_indices import fetch_market_indices
 from backend.reports import get_report_status, start_report
 from backend import symbols as symbols_module
 
@@ -205,6 +207,13 @@ async def auth_me(current_user: dict = Depends(get_current_user)):
     return current_user
 
 
+@app.get("/api/market-indices")
+async def api_market_indices():
+    """Return live Nifty 50, Sensex, Nifty Bank quotes from Yahoo Finance (60 s cache)."""
+    data = await fetch_market_indices()
+    return {"indices": data}
+
+
 @app.get("/api/symbols/suggest")
 async def api_symbols_suggest(q: str = ""):
     """Return list of { symbol, name } for typeahead; error if NSE lookup failed."""
@@ -251,6 +260,7 @@ async def api_reports_html(report_id: str):
 @app.get("/api/reports/{report_id}/pdf")
 async def api_reports_pdf(report_id: str, current_user: dict = Depends(get_current_user)):
     """Return report as PDF attachment when status is completed. Requires authentication."""
+    import time
     store = get_store()
     job = job_get(store, report_id)
     if job is None or job.get("status") != "completed":
@@ -260,15 +270,24 @@ async def api_reports_pdf(report_id: str, current_user: dict = Depends(get_curre
         raise HTTPException(status_code=404, detail="Report payload missing")
     meta = payload.get("meta") or {}
     symbol = (meta.get("symbol") or "report").upper()
+    user_id: int | None = current_user.get("id") if current_user else None
+
+    log_pdf_download(symbol, "requested", user_id=user_id)
+    t0 = time.monotonic()
     try:
-        # Run in thread so sync Playwright is not inside the asyncio loop
         pdf_bytes = await asyncio.to_thread(render_payload_to_pdf, payload)
     except Exception as e:
+        duration_ms = int((time.monotonic() - t0) * 1000)
         log_error("pdf_download", f"PDF render failed for {symbol}: {e}", exc=e, symbol=symbol)
+        log_pdf_download(symbol, "failed", user_id=user_id, error_detail=str(e), duration_ms=duration_ms)
         raise HTTPException(status_code=500, detail=str(e)) from e
     if not pdf_bytes:
+        duration_ms = int((time.monotonic() - t0) * 1000)
         log_error("pdf_download", f"PDF render returned empty bytes for {symbol}", symbol=symbol)
+        log_pdf_download(symbol, "failed", user_id=user_id, error_detail="empty bytes", duration_ms=duration_ms)
         raise HTTPException(status_code=500, detail="PDF generation failed")
+    duration_ms = int((time.monotonic() - t0) * 1000)
+    log_pdf_download(symbol, "success", user_id=user_id, duration_ms=duration_ms)
     from fastapi.responses import Response
     return Response(
         content=pdf_bytes,
