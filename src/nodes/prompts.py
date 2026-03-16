@@ -925,6 +925,77 @@ Return ONLY the JSON object.""" + _reference_date_context() + _WEB_SEARCH_INSTRU
     return system, user
 
 
+def concall_single_card_prompt(
+    company_name: str,
+    quarter_label: str,
+    transcript: dict,
+) -> tuple[str, str]:
+    """Extract one concall card from one transcript. No web search."""
+    transcript_text = (transcript.get("text") or "")[:20000]
+    link = transcript.get("link") or ""
+    date = transcript.get("date") or ""
+
+    system = (
+        "You are an equity research analyst extracting structured data from a single earnings concall transcript. "
+        "Extract ONLY information explicitly stated in the transcript — do not infer, generalise, or add external knowledge. "
+        "Return a JSON object with keys: bullets, events, qaHighlights, guidance, capex.\n\n"
+        "bullets: 6-9 strings. ALWAYS start with financial numbers (Revenue ±% YoY to ₹X Cr, "
+        "EBITDA ₹X Cr + margin %, PAT ±%). "
+        "Then operational: order book, margin guidance direction, raw material/input cost changes "
+        "(MANDATORY if discussed — include exact ₹ or % figures), receivables/debtor days, "
+        "govt policy tailwinds, headwinds, capex progress, corporate actions, new geographies/products.\n\n"
+        "events: list major events explicitly announced — acquisitions, fundraises, stake sales, "
+        "large capex, significant order wins, management changes, guidance changes. "
+        "Each: {type, headline (≤12 words), details (list of strings)}.\n\n"
+        "qaHighlights: ONLY for promoter stake/pledge, auditor concerns, guidance cut pushback, "
+        "acquisition rationale, debt concerns. Each: {q, a}. Return [] if none apply.\n\n"
+        "guidance: one sentence capturing management's forward guidance, or null.\n\n"
+        "capex: list of capex projects: [{project, amount, funding}]. Return [] if none.\n\n"
+        "No code fences. Return only the JSON object."
+    )
+
+    user = (
+        f"Company: {company_name}\n"
+        f"Quarter: {quarter_label}\n"
+        f"Transcript date: {date}\n"
+        f"Source: {link}\n\n"
+        f"--- TRANSCRIPT ---\n{transcript_text}"
+    )
+    return system, user
+
+
+def concall_summary_prompt(
+    company_name: str,
+    covered_quarters: list[str],
+    cards: list[dict],
+) -> tuple[str, str]:
+    """Generate overall summary + guidance table from assembled cards. No web search."""
+    bullets_block = "\n\n".join(
+        f"{c['period']}:\n" + "\n".join(f"  - {b}" for b in (c.get("bullets") or []))
+        for c in cards
+        if c.get("badge") == "concall" and c.get("bullets")
+    )
+
+    system = (
+        "You are an equity research analyst. Given concall highlights across multiple quarters for one company, "
+        "produce: (1) a one-sentence summary of recent performance and trends, "
+        "(2) a guidance table for metrics where management gave guidance across ≥2 quarters.\n\n"
+        "guidance_table_rows: 2-5 rows only for metrics with guidance across multiple quarters "
+        "(e.g. Revenue growth, EBITDA margin, Capex, Debt reduction). "
+        "Each row: {metric, cells} where cells has one entry per covered quarter (newest first), "
+        "each cell {value: string, trend: raised|cut|maintained|neutral}. "
+        "If no cross-quarter guidance patterns exist, return [].\n\n"
+        "Return ONLY JSON: {summary, guidance_table_rows}. No code fences."
+    )
+
+    user = (
+        f"Company: {company_name}\n"
+        f"Quarters covered (newest first): {', '.join(covered_quarters)}\n\n"
+        f"Highlights by quarter:\n\n{bullets_block}"
+    )
+    return system, user
+
+
 def sectoral_prompt(company_name: str, sector: str) -> tuple[str, str]:
     system = (
         "You are an equity research analyst. For the given company and sector, identify factors that could "

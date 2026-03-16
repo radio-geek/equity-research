@@ -372,3 +372,36 @@ export async function submitFeedback(body: FeedbackRequest): Promise<{ ok: boole
   }
   return res.json()
 }
+
+export interface DetailedFeedbackRequest {
+  symbol: string
+  section_ratings: Record<string, number>
+  suggestion?: string | null
+}
+
+export async function submitDetailedFeedback(body: DetailedFeedbackRequest): Promise<{ ok: boolean }> {
+  const res = await fetch(`${API_BASE}/api/feedback/detailed`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail ?? res.statusText)
+  }
+  return res.json()
+}
+
+export interface IndexTick {
+  name: string
+  value: string
+  change: string
+  positive: boolean
+}
+
+export async function getMarketIndices(): Promise<IndexTick[]> {
+  const res = await fetch(`${API_BASE}/api/market-indices`)
+  if (!res.ok) throw new Error('Failed to fetch market indices')
+  const data = await res.json()
+  return data.indices as IndexTick[]
+}

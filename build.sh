@@ -18,7 +18,7 @@ elif [ "$(uname -s)" = "Linux" ] && [ "$(uname -m)" = "x86_64" ]; then
   mkdir -p "$CHROMIUM_DIR"
 
   echo "Downloading minimal Chromium build (~35-40 MB)..."
-  CHROMIUM_URL="https://github.com/Sparticuz/chromium/releases/latest/download/chromium-v123-linux-x64.tar.gz"
+  CHROMIUM_URL="https://github.com/Sparticuz/chromium/releases/latest/download/chromium-v131-linux-x64.tar.gz"
   curl -fsSL "$CHROMIUM_URL" -o /tmp/chromium.tar.gz
 
   echo "Extracting Chromium..."

@@ -114,6 +114,44 @@ CREATE INDEX IF NOT EXISTS idx_feedback_report_id ON feedback (report_id);
 
 
 -- ---------------------------------------------------------------------------
+-- TABLE: section_feedback
+-- Per-section star ratings (1-5) and optional suggestion text on reports.
+-- section_ratings is a JSONB object: { "section_name": rating_int, ... }
+-- user_id is nullable (anonymous allowed).
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS section_feedback (
+  id               BIGSERIAL PRIMARY KEY,
+  symbol           TEXT NOT NULL,
+  user_id          INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  section_ratings  JSONB NOT NULL DEFAULT '{}',
+  suggestion       TEXT,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_section_feedback_symbol  ON section_feedback (symbol);
+CREATE INDEX IF NOT EXISTS idx_section_feedback_user_id ON section_feedback (user_id);
+
+
+-- ---------------------------------------------------------------------------
+-- TABLE: pdf_downloads
+-- One row per PDF download attempt — tracks requested / success / failed.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS pdf_downloads (
+  id            BIGSERIAL PRIMARY KEY,
+  symbol        TEXT        NOT NULL,
+  user_id       INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  status        TEXT        NOT NULL CHECK (status IN ('requested', 'success', 'failed')),
+  error_detail  TEXT,
+  duration_ms   INTEGER,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pdf_downloads_symbol     ON pdf_downloads (symbol);
+CREATE INDEX IF NOT EXISTS idx_pdf_downloads_user_id    ON pdf_downloads (user_id);
+CREATE INDEX IF NOT EXISTS idx_pdf_downloads_created_at ON pdf_downloads (created_at DESC);
+
+
+-- ---------------------------------------------------------------------------
 -- TABLE: error_logs
 -- Application-level errors from all pipeline nodes.
 -- node = identifier like 'report_generate', 'auth_signin', 'pdf_download'
@@ -145,5 +183,5 @@ CREATE INDEX IF NOT EXISTS idx_error_logs_created_at ON error_logs (created_at D
 
 -- ---------------------------------------------------------------------------
 -- Done. Tables created:
---   users, sessions, reports, concall_transcripts, feedback, error_logs
+--   users, sessions, reports, concall_transcripts, feedback, section_feedback, error_logs
 -- ---------------------------------------------------------------------------

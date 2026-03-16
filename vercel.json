@@ -1,8 +1,13 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "pip install -r requirements.txt && cd frontend && npm run build",
+  "buildCommand": "pip install -r requirements.txt && mkdir -p chromium-bin && curl -fsSL https://github.com/Sparticuz/chromium/releases/latest/download/chromium-v131-linux-x64.tar.gz -o /tmp/chromium.tar.gz && tar -xzf /tmp/chromium.tar.gz -C chromium-bin && chmod +x chromium-bin/chromium && rm /tmp/chromium.tar.gz && cd frontend && npm run build",
   "installCommand": "cd frontend && npm install",
   "outputDirectory": "frontend/dist",
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 60
+    }
+  },
   "rewrites": [
     { "source": "/auth/:path*", "destination": "/api/vercel_auth/:path*" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }

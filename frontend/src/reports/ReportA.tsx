@@ -204,7 +204,7 @@ export function ReportA({ report }: ReportAProps) {
         ))}
       </div>
 
-      <Section title="Company overview">
+      <Section title="Company overview" id="section-overview">
         {report.companyOverviewStructured ? (
           <div
             style={{
@@ -290,7 +290,7 @@ export function ReportA({ report }: ReportAProps) {
         )}
       </Section>
 
-      <Section title="Management & governance">
+      <Section title="Management & governance" id="section-management">
         {report.managementPeople?.length ? (
           <>
             <h2 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.75rem', color: 'var(--text)' }}>Promoter & Board</h2>
@@ -386,11 +386,11 @@ export function ReportA({ report }: ReportAProps) {
         const af = report.auditorFlagsStructured
         const hasTimeline = (af?.events?.length ?? 0) > 0
         return hasTimeline && af ? (
-          <Section title="Auditor flags & qualifications">
+          <Section title="Auditor flags & qualifications" id="section-auditor">
             <AuditorTimelineView summary={af.summary} events={af.events ?? []} />
           </Section>
         ) : report.auditorFlags != null && report.auditorFlags !== '' ? (
-          <Section title="Auditor flags & qualifications">
+          <Section title="Auditor flags & qualifications" id="section-auditor">
             <div className="report-markdown" style={{ color: 'var(--text)', fontSize: '0.95rem', margin: 0 }}>
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{report.auditorFlags}</ReactMarkdown>
             </div>
@@ -401,7 +401,7 @@ export function ReportA({ report }: ReportAProps) {
       {isAuthenticated ? (
         <>
           {fiveYearTrend?.headers?.length ? (
-            <Section title="5-Year Financial Trend">
+            <Section title="5-Year Financial Trend" id="section-financials">
               <p style={{ fontSize: '0.9rem', color: 'var(--textMuted)', marginBottom: '1rem' }}>
                 Latest 5 completed financial years. Values in ₹ Crores unless noted.
               </p>
@@ -436,18 +436,20 @@ export function ReportA({ report }: ReportAProps) {
               )}
             </Section>
           ) : null}
-          <ConcallSection concall={report.concall ?? null} concallUpdatesFallback={report.concallUpdates} />
-          <Section title="Sectoral headwinds & tailwinds">
+          <div id="section-concall">
+            <ConcallSection concall={report.concall ?? null} concallUpdatesFallback={report.concallUpdates} />
+          </div>
+          <Section title="Sectoral headwinds & tailwinds" id="section-sectoral">
             <SectoralCard headwinds={report.sectoralHeadwinds} tailwinds={report.sectoralTailwinds} source={report.sectoralSource} />
           </Section>
-          <Section title="Green & red flags in financial data">
+          <Section title="Green & red flags in financial data" id="section-flags">
             <FlagsList greenFlags={report.greenFlags} redFlags={report.redFlags} />
           </Section>
         </>
       ) : (
         <>
           {fiveYearTrend?.headers?.length ? (
-            <Section title="5-Year Financial Trend">
+            <Section title="5-Year Financial Trend" id="section-financials">
               <p style={{ fontSize: '0.9rem', color: 'var(--textMuted)', marginBottom: '1rem' }}>
                 Latest 5 completed financial years. Values in ₹ Crores unless noted.
               </p>
@@ -482,7 +484,7 @@ export function ReportA({ report }: ReportAProps) {
               )}
             </Section>
           ) : null}
-          <Section title="Concall evaluation">
+          <Section title="Concall evaluation" id="section-concall">
             <div className="report-gated-wrap">
               <div className="report-gated-blur" aria-hidden>
                 <ConcallSection concall={report.concall ?? null} concallUpdatesFallback={report.concallUpdates} />
@@ -498,7 +500,7 @@ export function ReportA({ report }: ReportAProps) {
               </div>
             </div>
           </Section>
-          <Section title="Sectoral headwinds & tailwinds">
+          <Section title="Sectoral headwinds & tailwinds" id="section-sectoral">
             <div className="report-gated-wrap">
               <div className="report-gated-blur" aria-hidden>
                 <SectoralCard headwinds={report.sectoralHeadwinds} tailwinds={report.sectoralTailwinds} source={report.sectoralSource} />
@@ -514,7 +516,7 @@ export function ReportA({ report }: ReportAProps) {
               </div>
             </div>
           </Section>
-          <Section title="Green & red flags in financial data">
+          <Section title="Green & red flags in financial data" id="section-flags">
             <div className="report-gated-wrap">
               <div className="report-gated-blur" aria-hidden>
                 <FlagsList greenFlags={report.greenFlags} redFlags={report.redFlags} />
