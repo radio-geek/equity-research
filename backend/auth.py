@@ -32,16 +32,16 @@ def _jwt_secret() -> str:
 
 # ── Session management ────────────────────────────────────────────────────────
 
-def create_session(user_id: int) -> dict[str, Any]:
+def create_session(user_id: int, ip_address: str | None = None, user_agent: str | None = None) -> dict[str, Any]:
     """Insert a session row; return {id, expires_at}."""
     expires_at = datetime.now(timezone.utc) + timedelta(days=_SESSION_EXPIRE_DAYS)
     row = fetchone_with_return(
         """
-        INSERT INTO sessions (user_id, expires_at)
-        VALUES (%s, %s)
+        INSERT INTO sessions (user_id, expires_at, ip_address, user_agent)
+        VALUES (%s, %s, %s, %s)
         RETURNING id::text, expires_at
         """,
-        (user_id, expires_at),
+        (user_id, expires_at, ip_address, user_agent),
     )
     if not row:
         raise HTTPException(status_code=500, detail="Failed to create session")
@@ -70,9 +70,9 @@ def _get_active_session(session_id: str) -> dict[str, Any] | None:
 
 # ── JWT (embeds session id as jti) ────────────────────────────────────────────
 
-def create_access_token(user_id: int) -> str:
+def create_access_token(user_id: int, ip_address: str | None = None, user_agent: str | None = None) -> str:
     """Create a JWT whose jti is a new DB session id."""
-    session = create_session(user_id)
+    session = create_session(user_id, ip_address=ip_address, user_agent=user_agent)
     session_id = session["id"]
     expires_at = session["expires_at"]
     payload = {

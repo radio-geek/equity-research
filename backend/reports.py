@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import time
 import uuid
 from pathlib import Path
 
@@ -21,9 +22,10 @@ from backend.job_store import (
 )
 
 
-def _run_report_sync(report_id: str, symbol: str, exchange: str, store: dict) -> None:
+def _run_report_sync(report_id: str, symbol: str, exchange: str, store: dict, user_id: int | None = None) -> None:
     """Run graph once; update store with report_payload or error; write cache on success."""
     job_set_running(store, report_id)
+    t0 = time.monotonic()
     try:
         # Step 0a: Refresh transcript cache (fast when DB is up to date — 1 NSE API call)
         # Wrapped in its own try/except so a cache failure never kills the full report job.
@@ -60,7 +62,8 @@ def _run_report_sync(report_id: str, symbol: str, exchange: str, store: dict) ->
         values = result if isinstance(result, dict) else getattr(result, "values", result)
         report_payload = values.get("report_payload") if isinstance(values, dict) else None
         if isinstance(report_payload, dict):
-            set_cached_report(symbol, exchange, report_payload)
+            generation_ms = int((time.monotonic() - t0) * 1000)
+            set_cached_report(symbol, exchange, report_payload, requested_by=user_id, generation_ms=generation_ms)
             job_set_completed_with_payload(store, report_id, report_payload, from_cache=False)
         else:
             msg = "No report_payload in result"
@@ -71,11 +74,11 @@ def _run_report_sync(report_id: str, symbol: str, exchange: str, store: dict) ->
         log_error("report_generate", str(e), exc=e, symbol=symbol)
 
 
-async def start_report(report_id: str, symbol: str, exchange: str, store: dict) -> None:
+async def start_report(report_id: str, symbol: str, exchange: str, store: dict, user_id: int | None = None) -> None:
     """Run _run_report_sync in a thread so the event loop is not blocked."""
     import asyncio
 
-    await asyncio.to_thread(_run_report_sync, report_id, symbol, exchange, store)
+    await asyncio.to_thread(_run_report_sync, report_id, symbol, exchange, store, user_id)
 
 
 def get_report_status(store: dict, report_id: str) -> dict | None:

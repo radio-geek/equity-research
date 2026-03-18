@@ -33,28 +33,30 @@ def get_cached_report(symbol: str, exchange: str) -> dict | None:
         return None
 
 
-def set_cached_report(symbol: str, exchange: str, payload: dict) -> None:
+def set_cached_report(
+    symbol: str,
+    exchange: str,
+    payload: dict,
+    requested_by: int | None = None,
+    generation_ms: int | None = None,
+) -> None:
     """Upsert report payload into the reports table with a 24h TTL."""
     try:
         now = datetime.now(timezone.utc)
         expires_at = now + timedelta(hours=CACHE_TTL_HOURS)
         fetchone_with_return(
             """
-            INSERT INTO reports (symbol, exchange, payload, generated_at, expires_at)
-            VALUES (%s, %s, %s::jsonb, %s, %s)
+            INSERT INTO reports (symbol, exchange, payload, generated_at, expires_at, requested_by, generation_ms)
+            VALUES (%s, %s, %s::jsonb, %s, %s, %s, %s)
             ON CONFLICT (symbol, exchange) DO UPDATE
-              SET payload = EXCLUDED.payload,
+              SET payload      = EXCLUDED.payload,
                   generated_at = EXCLUDED.generated_at,
-                  expires_at = EXCLUDED.expires_at
+                  expires_at   = EXCLUDED.expires_at,
+                  requested_by = EXCLUDED.requested_by,
+                  generation_ms = EXCLUDED.generation_ms
             RETURNING id
             """,
-            (
-                symbol.upper(),
-                exchange.upper(),
-                json.dumps(payload),
-                now,
-                expires_at,
-            ),
+            (symbol.upper(), exchange.upper(), json.dumps(payload), now, expires_at, requested_by, generation_ms),
         )
     except Exception as e:
         logger.warning("cache write failed for %s/%s: %s", symbol, exchange, e)
