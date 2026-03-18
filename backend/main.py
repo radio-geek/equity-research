@@ -39,8 +39,8 @@ from backend.auth import (
     upsert_user,
     verify_oauth_state,
 )
+from backend.db import fetchone as db_fetchone
 from backend.error_store import log_error
-from backend.feedback_store import append_feedback
 from backend.section_feedback_store import append_section_feedback
 from backend.job_store import create_job_store, get as job_get, set_pending
 from backend.pdf_render import render_payload_to_pdf
@@ -173,7 +173,11 @@ async def auth_google_callback(
     try:
         google_info = await exchange_code_for_user(code)
         user = upsert_user(google_info)
-        token = create_access_token(user["id"])
+        token = create_access_token(
+            user["id"],
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
     except Exception as exc:
         import logging
         logging.exception("OAuth callback error: %s", exc)
@@ -224,16 +228,18 @@ async def api_symbols_suggest(q: str = ""):
 
 
 @app.post("/api/reports")
-async def api_reports_create(body: CreateReportRequest):
+async def api_reports_create(body: CreateReportRequest, request: Request):
     """Start a report job; if cached report exists (< 24h), complete immediately with from_cache."""
     symbol = (body.symbol or "").strip().upper()
     exchange = (body.exchange or "NSE").strip().upper()
     if not symbol:
         raise HTTPException(status_code=400, detail="symbol required")
+    user = get_current_user_optional(request)
+    user_id: int | None = user["id"] if user else None
     report_id = str(uuid.uuid4())
     store = get_store()
     set_pending(store, report_id)
-    asyncio.create_task(start_report(report_id, symbol, exchange, store))
+    asyncio.create_task(start_report(report_id, symbol, exchange, store, user_id=user_id))
     return {"report_id": report_id}
 
 
@@ -296,25 +302,6 @@ async def api_reports_pdf(report_id: str, current_user: dict = Depends(get_curre
     )
 
 
-class FeedbackRequest(BaseModel):
-    report_id: str
-    rating: str  # "up" or "down"
-    comment: str | None = None
-
-
-@app.post("/api/feedback")
-async def api_feedback(body: FeedbackRequest, request: Request):
-    """Store thumbs up/down and optional comment for a report. User optional."""
-    from backend.auth import get_current_user_optional
-    rating = (body.rating or "").strip().lower()
-    if rating not in ("up", "down"):
-        raise HTTPException(status_code=400, detail="rating must be 'up' or 'down'")
-    user = get_current_user_optional(request)
-    user_id = user["id"] if user else None
-    append_feedback(body.report_id, rating, body.comment, user_id=user_id)
-    return {"ok": True}
-
-
 class DetailedFeedbackRequest(BaseModel):
     symbol: str
     section_ratings: dict  # { "section_name": rating_int }
@@ -326,5 +313,10 @@ async def api_feedback_detailed(body: DetailedFeedbackRequest, request: Request)
     """Store per-section star ratings and optional suggestion. User optional."""
     user = get_current_user_optional(request)
     user_id = user["id"] if user else None
-    append_section_feedback(body.symbol, body.section_ratings, body.suggestion, user_id=user_id)
+    report_row = db_fetchone(
+        "SELECT id FROM reports WHERE symbol = %s ORDER BY generated_at DESC LIMIT 1",
+        (body.symbol.upper(),),
+    )
+    report_id: int | None = report_row["id"] if report_row else None
+    append_section_feedback(body.symbol, body.section_ratings, body.suggestion, user_id=user_id, report_id=report_id)
     return {"ok": True}

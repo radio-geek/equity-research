@@ -15,6 +15,7 @@ def append_section_feedback(
     section_ratings: dict,
     suggestion: str | None = None,
     user_id: int | None = None,
+    report_id: int | None = None,
 ) -> None:
     """Insert one section-feedback entry.
 
@@ -23,10 +24,10 @@ def append_section_feedback(
     try:
         execute(
             """
-            INSERT INTO section_feedback (symbol, user_id, section_ratings, suggestion)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO section_feedback (symbol, user_id, section_ratings, suggestion, report_id)
+            VALUES (%s, %s, %s, %s, %s)
             """,
-            (symbol, user_id, json.dumps(section_ratings), suggestion or None),
+            (symbol, user_id, json.dumps(section_ratings), suggestion or None, report_id),
         )
     except Exception as e:
         logger.warning("section_feedback write failed for symbol %s: %s", symbol, e)
