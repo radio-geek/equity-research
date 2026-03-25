@@ -27,7 +27,6 @@ def management(state: ResearchState) -> dict[str, Any]:
     logger.info("management: done for %s", symbol)
 
     management_people: list[dict] = []
-    management_governance_news: list[dict] = []
     management_research = ""
 
     if parsed:
@@ -35,24 +34,18 @@ def management(state: ResearchState) -> dict[str, Any]:
             {"name": p.name, "designation": p.designation, "description": p.description}
             for p in parsed.people
         ]
-        management_governance_news = [
-            {"text": n.text, "sentiment": n.sentiment} for n in parsed.governance_news
-        ]
         management_research = (parsed.rpt_and_gaps or "").strip()
-        if not management_research and (management_people or management_governance_news):
+        if not management_research and management_people:
             management_research = "Related party transactions and gaps: see search results above where available."
         logger.info(
-            "management: parsed structured output, people=%d, news=%d",
+            "management: parsed structured output, people=%d",
             len(management_people),
-            len(management_governance_news),
         )
 
     if not management_research:
-        management_research = "Management & governance data unavailable (parse or search failure)."
+        management_research = "Management data unavailable (parse or search failure)."
 
     out: dict[str, Any] = {"management_research": management_research}
     if management_people:
         out["management_people"] = management_people
-    if management_governance_news:
-        out["management_governance_news"] = management_governance_news
     return out

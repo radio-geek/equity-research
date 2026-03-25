@@ -6,9 +6,14 @@ import logging
 import re
 from typing import Any
 
+from src.data.screener_annual_report import fetch_governance_excerpt_from_latest_screener_ar
 from src.state import ResearchState
 
-from .prompts import auditor_flags_prompt, invoke_llm_structured
+from .prompts import (
+    auditor_flags_from_annual_report_prompt,
+    auditor_flags_prompt,
+    invoke_llm_structured,
+)
 from .schemas import AuditorFlagsStructured, AuditorEvent
 
 logger = logging.getLogger(__name__)
@@ -29,11 +34,24 @@ def _normalize_event_date(event: dict[str, Any]) -> str:
     return "0000-01"
 
 
-def _sort_events_desc(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Sort events by date descending (latest first). Mutates and returns the same list."""
+def _signal_rank(event: dict[str, Any]) -> int:
+    """Lower = show first (red before yellow before green)."""
+    sig = (event.get("signal") or "").strip().lower()
+    if sig == "red":
+        return 0
+    if sig == "yellow":
+        return 1
+    if sig == "green":
+        return 2
+    return 1
+
+
+def _sort_events_for_display(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Stable sort: primary signal (red first), then date descending within tier."""
     for e in events:
         e["_sort_key"] = _normalize_event_date(e)
     events.sort(key=lambda e: e["_sort_key"], reverse=True)
+    events.sort(key=_signal_rank)
     for e in events:
         e.pop("_sort_key", None)
     return events
@@ -41,7 +59,16 @@ def _sort_events_desc(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _event_to_dict(e: AuditorEvent) -> dict[str, Any]:
     """Convert Pydantic event to dict for sorting and report payload."""
-    return {"date": e.date, "fy": e.fy, "description": e.description}
+    return {
+        "date": e.date,
+        "fy": e.fy,
+        "category": e.category,
+        "type": e.type,
+        "signal": e.signal,
+        "issue": e.issue,
+        "evidence": e.evidence,
+        "status": e.status,
+    }
 
 
 def auditor_flags(state: ResearchState) -> dict[str, Any]:
@@ -52,26 +79,59 @@ def auditor_flags(state: ResearchState) -> dict[str, Any]:
 
     logger.info("auditor_flags: starting for %s (%s)", symbol, exchange)
 
-    system, user = auditor_flags_prompt(company_name, symbol, exchange)
-    logger.debug("auditor_flags: invoking LLM with web search")
-    parsed = invoke_llm_structured(system, user, AuditorFlagsStructured, use_web_search=True)
-    logger.debug("auditor_flags: structured invoke returned %s", "ok" if parsed else "None")
+    parsed = None
+    ar_bundle = fetch_governance_excerpt_from_latest_screener_ar(symbol)
+    if ar_bundle and (ar_bundle.get("excerpt") or "").strip():
+        logger.info(
+            "auditor_flags: using Screener AR excerpt (%s, %d chars)",
+            ar_bundle.get("fy_label"),
+            ar_bundle.get("excerpt_length"),
+        )
+        system, user = auditor_flags_from_annual_report_prompt(
+            company_name,
+            symbol,
+            exchange,
+            ar_bundle["fy_label"],
+            ar_bundle["url"],
+            ar_bundle["excerpt"],
+        )
+        parsed = invoke_llm_structured(
+            system, user, AuditorFlagsStructured, use_web_search=False
+        )
+        logger.debug(
+            "auditor_flags: AR structured invoke returned %s", "ok" if parsed else "None"
+        )
 
+    if parsed is None:
+        system, user = auditor_flags_prompt(company_name, symbol, exchange)
+        logger.debug("auditor_flags: invoking LLM with web search (fallback)")
+        parsed = invoke_llm_structured(
+            system, user, AuditorFlagsStructured, use_web_search=True
+        )
+        logger.debug(
+            "auditor_flags: web-search structured invoke returned %s",
+            "ok" if parsed else "None",
+        )
+
+    verdict = "OK"
     summary = ""
     events: list[dict[str, Any]] = []
 
     if parsed:
+        verdict = (parsed.verdict or "OK").strip().upper()
+        if verdict not in ("RISK", "OK", "GOOD"):
+            verdict = "OK"
         summary = (parsed.summary or "").strip()
-        events = [_event_to_dict(e) for e in parsed.events]
-        events = _sort_events_desc(events)
+        events = [_event_to_dict(e) for e in parsed.events][:5]
+        events = _sort_events_for_display(events)
 
     if not summary and events:
         summary = f"{len(events)} audit-related event(s) in the last 5 years."
     if not summary:
         summary = "No auditor qualifications or events found in the last 5 years."
 
-    logger.info("auditor_flags: done, summary=%s, events=%d", summary[:60], len(events))
+    logger.info("auditor_flags: done, verdict=%s, events=%d", verdict, len(events))
     return {
         "auditor_flags": summary,
-        "auditor_flags_structured": {"summary": summary, "events": events},
+        "auditor_flags_structured": {"verdict": verdict, "summary": summary, "events": events},
     }

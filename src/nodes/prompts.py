@@ -355,7 +355,6 @@ def management_prompt(company_name: str, symbol: str, meta: dict, shareholding: 
         "You MUST use the web search tool. Do not rely on training knowledge for company-specific facts.\n"
         "Search for: promoter background and history; board composition and director credentials; "
         "related party transactions (RPT) from annual reports or BSE/NSE filings; shareholding pledges. "
-        "For governance_news only: search strictly for governance-related developments (see below). "
         "Base the output on search results.\n\n"
 
         "Output format: Return ONLY a single JSON object (no markdown, no code fences, no preamble). "
@@ -366,29 +365,19 @@ def management_prompt(company_name: str, symbol: str, meta: dict, shareholding: 
         "\"description\" (string, 1–3 sentences: background, expertise, tenure, other roles, reputation). "
         "Include promoters and board members; keep list focused (typically 5–12 people).\n\n"
 
-        "2. \"governance_news\" (array of objects): STRICTLY governance-only news from the last 1 year only (from today, back 12 months). "
-        "Include ONLY items that are clearly about governance: board composition changes, independent director appointments/resignations, "
-        "audit committee or other board committee changes, SEBI/regulatory actions on governance, governance awards or ratings, "
-        "related-party or disclosure violations, auditor changes, shareholder voting on governance, ESG governance disclosures. "
-        "EXCLUDE: general business news, earnings, product launches, capacity, orders, sector trends, stock price, or any non-governance item. "
-        "Each object: \"text\" (string, short headline or 1-sentence summary; include date or recency if possible), "
-        "\"sentiment\" (string, exactly one of: \"positive\", \"negative\", \"neutral\"). "
-        "Use positive for e.g. board diversity, governance awards, clean disclosures; negative for regulatory action, violations; neutral for routine appointments. "
-        "Include up to 5–8 items; if none in the last 12 months, use empty array.\n\n"
-
-        "3. \"rpt_and_gaps\" (string): Short Markdown paragraph(s) covering: (a) Related party transactions summary (material RPTs, arm's length, any concerns); "
+        "2. \"rpt_and_gaps\" (string): Short Markdown paragraph(s) covering: (a) Related party transactions summary (material RPTs, arm's length, any concerns); "
         "(b) Gaps & assumptions if you had to infer anything or lacked data. If nothing to add, use empty string.\n\n"
 
         "Example shape:\n"
         '{"people": [{"name": "...", "designation": "...", "description": "..."}], '
-        '"governance_news": [{"text": "...", "sentiment": "positive"}], "rpt_and_gaps": "..."}\n\n'
+        '"rpt_and_gaps": "..."}\n\n'
     ) + _reference_date_context() + _WEB_SEARCH_INSTRUCTION
 
     user = (
         f"Company: {company_name} (symbol: {symbol}).\n\n"
         f"Meta (company/financial context): {_serialize(meta)}\n\n"
         f"Shareholding pattern (quarterly): {_serialize(shareholding)}\n\n"
-        "Using the above and mandatory web search: return the single JSON object with people, governance_news, and rpt_and_gaps. "
+        "Using the above and mandatory web search: return the single JSON object with people and rpt_and_gaps. "
         "Be objective and data-driven."
     )
     return system, user
@@ -457,57 +446,104 @@ def _last_5_fy() -> list[str]:
 
 def auditor_flags_prompt(company_name: str, symbol: str, exchange: str) -> tuple[str, str]:
     fy_list = ", ".join(_last_5_fy())
-    system = """You are an expert equity research analyst and forensic accountant specializing in audit quality for Indian listed companies.
+    system = """You are a forensic equity analyst. Think like a skeptical minority shareholder.
 
-**CRITICAL: You MUST use web search to find real, current data.** Do not rely on internal knowledge or generalisations. Search BSE/NSE filings, annual reports, company websites, Screener.in, Trendlyne, MoneyControl, and financial news for this specific company. If you cannot find recent information via search, say so explicitly.
+**CRITICAL: You MUST use web search** for real, current evidence. Search BSE/NSE filings, annual reports, Screener, Trendlyne, MoneyControl. Do not invent.
 
-Your task: Identify ALL auditor qualifications, emphasis of matter, going concern doubts, CARO/secretarial audit observations, and auditor changes for the company across the last 5 annual reports.
+**Focus areas (prioritize these):**
+1. **Board remuneration** — excessive or spiking promoter/KMP pay vs profits
+2. **Related party transactions** — material RPTs, loans/guarantees to promoter entities, arm's length concerns
+3. **Auditor report** — qualified/modified opinion, emphasis of matter, CARO, going concern, auditor changes, IFC issues
+4. **Receivables / inventory / loans / advances** — unusual build-up, ageing concerns, doubtful amounts
+5. **Contingent liabilities** — material litigation, tax disputes, guarantees
 
-**Search strategy (use web search for each):**
-1. Search: "{company} {symbol} annual report auditor qualification", "{company} auditor report emphasis of matter"
-2. Search: "{company} CARO qualification", "{company} secretarial audit observations"
-3. Search: "{company} going concern", "{company} audit qualified opinion"
-4. Search: "{company} auditor change", "{company} auditor resignation"
-5. Look at BSE/NSE disclosure filings, latest annual report PDFs or summaries, and investor forums
+**Signal per finding:**
+- **red** — material risk, needs immediate investor attention
+- **yellow** — moderate, worth monitoring
+- **green** — clean, no issues found in this area (use to show you checked it)
 
-**Cover only these 5 financial years (most recent first):** """ + fy_list + """
+**Scope:** """ + fy_list + """
 
-**For each finding:**
-- **date** (string): For ordering. Use YYYY-MM when known (e.g. audit report date or FY year-end March → 2025-03). If only year is known use YYYY (e.g. 2024). Indian FY year-end is March (e.g. FY25 → 2025-03).
-- **fy** (string): Display label, e.g. FY25.
-- **type** (string): Exactly one of: Qualified Opinion, Emphasis of Matter, Going Concern, CARO, Secretarial Audit, Auditor Change, Other.
-- **issue** (string): One short line; be concise.
-- **is_red_flag** (boolean): true for qualifications, going concern, auditor resignation, filing delays, restatements, or other serious concerns; false for routine emphasis of matter or clean items.
-- **status** (string, optional): Resolved, Recurring, or Pending.
-- **management_response** (string, optional): One line if available.
+**OUTPUT: Return ONLY valid JSON** (no markdown fences).
 
-**OUTPUT FORMAT: Return a single JSON object only.** No markdown, no code fences, no text outside the JSON.
+- **verdict** (string): Overall assessment — exactly one of: "RISK", "OK", "GOOD"
+  - RISK = material red flags found
+  - OK = some yellow flags but nothing critical
+  - GOOD = governance looks clean across focus areas
+- **summary** (string): 2–4 sentences explaining the verdict. Plain text, no markdown headers.
+- **events** — **at most 5** findings (red first, then yellow, then green). Each object:
+  - **date** (string): YYYY-MM or YYYY
+  - **fy** (string): e.g. FY25
+  - **category** (string): Board remuneration | Related party | Auditor report | Receivables & working capital | Contingent liabilities | Other
+  - **type** (string): specific label (e.g. CARO, Qualified Opinion, Remuneration spike, RPT disclosure)
+  - **signal** (string): exactly one of: red, yellow, green
+  - **issue** (string): What was found and why it matters (1–3 sentences)
+  - **evidence** (string): Source reference or quote. Empty string if none
+  - **status** (string, optional): Resolved / Recurring / Pending
 
-Schema:
-{
-  "summary": "One line, e.g. '3 qualifications (FY22–FY25); 1 recurring, 1 pending' or 'Clean opinions — no qualifications in last 5 years.'",
-  "events": [
-    {
-      "date": "2025-03",
-      "fy": "FY25",
-      "type": "Qualified Opinion",
-      "issue": "Short description of the qualification.",
-      "is_red_flag": true,
-      "status": "Pending",
-      "management_response": "Optional one line."
-    }
-  ]
-}
-
-- List events in **descending** order by date (most recent first).
-- If no qualifications are found after searching, return events: [] and summary explaining that you searched and found none.
-- Keep issue and management_response to one short line each.""" + _reference_date_context()
+If nothing material found, return verdict "GOOD", events with green signals showing what you checked.""" + _reference_date_context()
 
     user = (
         f"Company: **{company_name}** (Symbol: {symbol}, Exchange: {exchange}).\n\n"
-        "Use web search to find and document all auditor qualifications, emphasis of matter, going concern opinions, "
-        "CARO qualifications, secretarial audit observations, and auditor changes for the last 5 years. "
-        f"Cover only: {fy_list}. Return a single JSON object with summary and events (descending by date). Do not invent; cite search results."
+        "Use web search. Return only the JSON object with verdict, summary, and events "
+        f"(max 5). Cover FY window: {fy_list}. Red signals first."
+    )
+    return system, user
+
+
+def auditor_flags_from_annual_report_prompt(
+    company_name: str,
+    symbol: str,
+    exchange: str,
+    fy_label: str,
+    ar_url: str,
+    excerpt: str,
+) -> tuple[str, str]:
+    """Forensic governance + auditor review using ONLY annual report excerpt (no web search)."""
+    system = """You are a forensic equity analyst. Think like a skeptical minority shareholder.
+
+**CRITICAL: Use ONLY the annual report excerpt provided.** No web search. No outside knowledge. If the excerpt is silent or boilerplate-only, say so — do not invent findings.
+
+**Focus areas (prioritize these):**
+1. **Board remuneration** — promoter/KMP pay vs company profits, commission, sitting fees, stock options
+2. **Related party transactions** — material RPTs, loans/guarantees to promoter entities, arm's length disclosures
+3. **Auditor report** — qualified/modified opinion, emphasis of matter, CARO observations, going concern, IFC/Section 143 remarks, auditor changes
+4. **Receivables / inventory / loans / advances** — unusual build-up, ageing, doubtful amounts, capital advances
+5. **Contingent liabilities** — litigation, tax disputes, guarantees, claims against the company
+
+**Signal per finding:**
+- **red** — material risk, needs immediate investor attention
+- **yellow** — moderate, worth monitoring
+- **green** — clean, no issues found in this area (use to confirm you checked it)
+
+Each finding must cite **evidence** (note number, section, or short phrase from the excerpt).
+
+**OUTPUT: one JSON object only** (no markdown fences).
+
+- **verdict** (string): exactly one of "RISK", "OK", "GOOD"
+  - RISK = material red flags found in the excerpt
+  - OK = some yellow flags but nothing critical
+  - GOOD = governance looks clean across focus areas
+- **summary** (string): 2–4 sentences explaining the verdict. Plain text, no markdown headers. If boilerplate-only, say so.
+- **events** — **at most 5** findings (red first, then yellow, then green). Each object:
+  - **date** (string): YYYY-MM from excerpt or FY year-end for """ + fy_label + """ (e.g. FY25 → 2025-03)
+  - **fy** (string): """ + fy_label + """
+  - **category** (string): Board remuneration | Related party | Auditor report | Receivables & working capital | Contingent liabilities | Other
+  - **type** (string): specific label (e.g. CARO, Remuneration spike, RPT disclosure, Receivable ageing)
+  - **signal** (string): exactly one of: red, yellow, green
+  - **issue** (string): What was found and why it matters (1–3 sentences)
+  - **evidence** (string): Note / section / short quote from excerpt
+  - **status** (string, optional): Resolved / Recurring / Pending
+
+If nothing material found, return verdict "GOOD" with green signal events showing what you checked.""" + _reference_date_context()
+
+    user = (
+        f"Company: **{company_name}** (Symbol: {symbol}, Exchange: {exchange}).\n"
+        f"Annual report: **{fy_label}**. Source: {ar_url}\n\n"
+        "--- BEGIN ANNUAL REPORT EXCERPT ---\n"
+        f"{excerpt}\n"
+        "--- END EXCERPT ---\n\n"
+        "Return only the JSON object with verdict, summary, and events (max 5). Red signals first."
     )
     return system, user
 

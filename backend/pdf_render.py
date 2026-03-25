@@ -137,72 +137,88 @@ def _escape_html(s: str) -> str:
     )
 
 
-_TYPE_TO_BADGE = {
-    "qualified opinion": "audit-timeline-badge--qualified",
-    "emphasis of matter": "audit-timeline-badge--emphasis",
-    "going concern": "audit-timeline-badge--going-concern",
-    "caro": "audit-timeline-badge--caro",
-    "secretarial audit": "audit-timeline-badge--secretarial",
-    "auditor change": "audit-timeline-badge--auditor-change",
-}
 _MONTHS = ("", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+_VERDICT_STYLES = {
+    "RISK": "background:#c62828;color:#fff;",
+    "OK":   "background:#e65100;color:#fff;",
+    "GOOD": "background:#059669;color:#fff;",
+}
+
+_SIGNAL_STYLES = {
+    "red":    ("audit-timeline-item--red", "#c62828"),
+    "yellow": ("audit-timeline-item--yellow", "#ef6c00"),
+    "green":  ("audit-timeline-item--green", "#059669"),
+}
 
 
 def _auditor_timeline_to_html(structured: dict | None) -> str:
-    """Build timeline HTML from auditor_flags_structured (summary + events, sorted desc)."""
+    """Build governance verdict + event cards HTML from auditor_flags_structured."""
     if not structured or not isinstance(structured, dict):
         return ""
+
+    verdict = (structured.get("verdict") or "OK").strip().upper()
+    summary = (structured.get("summary") or "").strip()
     events = structured.get("events")
-    if not isinstance(events, list) or not events:
-        summary = (structured.get("summary") or "").strip()
-        if summary:
-            return f'<div class="audit-timeline audit-timeline--empty"><p class="audit-timeline-summary">{_escape_html(summary)}</p></div>'
+    if not isinstance(events, list):
+        events = []
+
+    if not verdict and not summary and not events:
         return ""
 
-    summary = (structured.get("summary") or "").strip()
-    parts = []
+    parts: list[str] = []
+
+    vstyle = _VERDICT_STYLES.get(verdict, _VERDICT_STYLES["OK"])
+    parts.append('<div class="audit-verdict-block">')
+    parts.append(f'<span class="audit-verdict-badge" style="{vstyle}">{_escape_html(verdict)}</span>')
     if summary:
-        parts.append(f'<p class="audit-timeline-summary">{_escape_html(summary)}</p>')
-    parts.append('<div class="audit-timeline">')
-    for ev in events:
-        if not isinstance(ev, dict):
-            continue
-        date_val = ev.get("date") or ""
-        fy = _escape_html(str(ev.get("fy") or ""))
-        typ = str(ev.get("type") or "Other").strip().lower()
-        badge_class = _TYPE_TO_BADGE.get(typ, "audit-timeline-badge--other")
-        issue = _escape_html(str(ev.get("issue") or ""))
-        is_red = ev.get("is_red_flag") is True
-        status = (ev.get("status") or "").strip()
-        mgmt = (ev.get("management_response") or "").strip()
-
-        date_label = fy
-        if date_val and len(date_val) >= 7 and date_val[4] == "-":
-            try:
-                y, m = date_val[:4], date_val[5:7]
-                mi = int(m)
-                if 1 <= mi <= 12:
-                    date_label = f"{fy} · {_MONTHS[mi]} {y}"
-            except (ValueError, IndexError):
-                pass
-        elif date_val and len(date_val) == 4:
-            date_label = f"{fy} · {date_val}"
-
-        item_class = "audit-timeline-item"
-        if is_red:
-            item_class += " audit-timeline-item--red-flag"
-        parts.append(f'<div class="{item_class}">')
-        parts.append(f'<div class="audit-timeline-item-header">')
-        parts.append(f'<span class="audit-timeline-date">{_escape_html(date_label)}</span>')
-        parts.append(f'<span class="audit-timeline-badge {badge_class}">{_escape_html(str(ev.get("type") or "Other"))}</span>')
-        if status:
-            parts.append(f'<span class="audit-timeline-status">{_escape_html(status)}</span>')
-        parts.append("</div>")
-        parts.append(f'<p class="audit-timeline-issue">{issue}</p>')
-        if mgmt:
-            parts.append(f'<p class="audit-timeline-mgmt">{_escape_html(mgmt)}</p>')
-        parts.append("</div>")
+        parts.append(f'<span class="audit-verdict-text">{_escape_html(summary)}</span>')
     parts.append("</div>")
+
+    if events:
+        parts.append('<div class="audit-timeline">')
+        for ev in events:
+            if not isinstance(ev, dict):
+                continue
+            signal = (ev.get("signal") or "yellow").strip().lower()
+            sig_class, _ = _SIGNAL_STYLES.get(signal, _SIGNAL_STYLES["yellow"])
+            sig_label = {"red": "RISK", "yellow": "OK", "green": "GOOD"}.get(signal, "OK")
+
+            date_val = ev.get("date") or ""
+            fy = _escape_html(str(ev.get("fy") or ""))
+            category = _escape_html(str(ev.get("category") or ""))
+            typ = _escape_html(str(ev.get("type") or ""))
+            issue = _escape_html(str(ev.get("issue") or ""))
+            evidence = (ev.get("evidence") or "").strip()
+            status = (ev.get("status") or "").strip()
+
+            date_label = fy
+            if date_val and len(date_val) >= 7 and date_val[4] == "-":
+                try:
+                    y, m = date_val[:4], date_val[5:7]
+                    mi = int(m)
+                    if 1 <= mi <= 12:
+                        date_label = f"{fy} · {_MONTHS[mi]} {y}"
+                except (ValueError, IndexError):
+                    pass
+
+            parts.append(f'<div class="audit-timeline-item {sig_class}">')
+            parts.append('<div class="audit-timeline-item-header">')
+            parts.append(f'<span class="audit-signal-badge audit-signal-badge--{signal}">{sig_label}</span>')
+            if category:
+                parts.append(f'<span class="audit-timeline-category">{category}</span>')
+            parts.append(f'<span class="audit-timeline-date">{_escape_html(date_label)}</span>')
+            if status:
+                parts.append(f'<span class="audit-timeline-status">{_escape_html(status)}</span>')
+            parts.append("</div>")
+            if typ and typ != "Other":
+                parts.append(f'<div class="audit-timeline-type">{typ}</div>')
+            parts.append(f'<p class="audit-timeline-issue">{issue}</p>')
+            if evidence:
+                parts.append(f'<p class="audit-timeline-evidence">"{_escape_html(evidence)}"</p>')
+            parts.append("</div>")
+        parts.append("</div>")
+
     return "\n".join(parts)
 
 

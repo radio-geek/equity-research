@@ -87,27 +87,42 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Equity Research API", lifespan=lifespan)
 
-_frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:5173")
-_origins_set = {
-    _frontend_url,
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "http://localhost:5175",
-    "http://localhost:3000",
-    "http://127.0.0.1:5173",
-    "http://127.0.0.1:3000",
-}
+_origins_set: set[str] = set()
+
+
+def _add_allowed_origin(url: str) -> None:
+    u = url.strip().rstrip("/")
+    if u:
+        _origins_set.add(u)
+
+
+_add_allowed_origin(os.environ.get("FRONTEND_URL", "http://localhost:5173"))
+for _p in range(5173, 5190):
+    _add_allowed_origin(f"http://localhost:{_p}")
+    _add_allowed_origin(f"http://127.0.0.1:{_p}")
+_add_allowed_origin("http://localhost:3000")
+_add_allowed_origin("http://127.0.0.1:3000")
 _vercel_url = os.environ.get("VERCEL_URL")
 if _vercel_url:
-    _origins_set.add(f"https://{_vercel_url}")
-    _origins_set.add(f"http://{_vercel_url}")
-# Optional: comma-separated list of extra origins (e.g. GitHub Pages: https://user.github.io)
+    _add_allowed_origin(f"https://{_vercel_url}")
+    _add_allowed_origin(f"http://{_vercel_url}")
 _extra = os.environ.get("ADDITIONAL_CORS_ORIGINS", "")
 for origin in _extra.split(","):
-    origin = origin.strip()
-    if origin:
-        _origins_set.add(origin)
+    _add_allowed_origin(origin)
 _allowed_origins = list(_origins_set)
+
+
+def _origin_allowed(origin: str | None) -> bool:
+    if not origin:
+        return False
+    return origin.strip().rstrip("/") in _origins_set
+
+
+def _frontend_base_for_oauth(request: Request) -> str:
+    raw = request.cookies.get("oauth_client_origin")
+    if raw and _origin_allowed(raw):
+        return raw.strip().rstrip("/")
+    return os.environ.get("FRONTEND_URL", "http://localhost:5173").strip().rstrip("/")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,
@@ -127,7 +142,10 @@ def _valid_return_path(path: str | None) -> bool:
 
 
 @app.get("/auth/google")
-async def auth_google_login(request: Request, return_to: str | None = None):
+async def auth_google_login(
+    return_to: str | None = None,
+    client_origin: str | None = None,
+):
     """Redirect to Google OAuth2 consent screen (sets CSRF state cookie).
     If return_to is a safe path, redirect back there after login."""
     redirect = RedirectResponse(url="")  # url filled below after state is known
@@ -136,6 +154,14 @@ async def auth_google_login(request: Request, return_to: str | None = None):
         redirect.set_cookie(
             key="oauth_return_to",
             value=return_to,
+            httponly=True,
+            samesite="lax",
+            max_age=600,
+        )
+    if client_origin and _origin_allowed(client_origin):
+        redirect.set_cookie(
+            key="oauth_client_origin",
+            value=client_origin.strip().rstrip("/"),
             httponly=True,
             samesite="lax",
             max_age=600,
@@ -152,23 +178,32 @@ async def auth_google_callback(
     error: str | None = None,
 ):
     """Handle Google OAuth2 callback."""
-    frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+
+    def _auth_error_redirect(code_err: str) -> RedirectResponse:
+        base = _frontend_base_for_oauth(request)
+        r = RedirectResponse(url=f"{base}/?auth_error={code_err}")
+        r.delete_cookie("oauth_state")
+        r.delete_cookie("oauth_return_to")
+        r.delete_cookie("oauth_client_origin")
+        return r
 
     # User denied permission on Google consent screen
     if error:
         log_error("auth_signin", f"User denied Google OAuth consent: {error}")
-        return RedirectResponse(url=f"{frontend_url}/?auth_error=access_denied")
+        return _auth_error_redirect("access_denied")
 
     if not code or not state:
         log_error("auth_signin", "OAuth callback missing code or state params")
-        return RedirectResponse(url=f"{frontend_url}/?auth_error=missing_params")
+        return _auth_error_redirect("missing_params")
 
     # CSRF check
     try:
         verify_oauth_state(request, state)
     except HTTPException:
         log_error("auth_signin", "OAuth CSRF state mismatch")
-        return RedirectResponse(url=f"{frontend_url}/?auth_error=csrf_failed")
+        return _auth_error_redirect("csrf_failed")
+
+    frontend_url = _frontend_base_for_oauth(request)
 
     try:
         google_info = await exchange_code_for_user(code)
@@ -182,7 +217,7 @@ async def auth_google_callback(
         import logging
         logging.exception("OAuth callback error: %s", exc)
         log_error("auth_signin", f"OAuth callback server error: {exc}", exc=exc)
-        return RedirectResponse(url=f"{frontend_url}/?auth_error=server_error")
+        return _auth_error_redirect("server_error")
 
     return_to = request.cookies.get("oauth_return_to")
     if _valid_return_path(return_to):
@@ -193,6 +228,7 @@ async def auth_google_callback(
     else:
         redirect = RedirectResponse(url=f"{frontend_url}/?token={token}")
     redirect.delete_cookie("oauth_state")
+    redirect.delete_cookie("oauth_client_origin")
     return redirect
 
 

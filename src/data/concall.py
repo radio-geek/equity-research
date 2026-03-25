@@ -8,12 +8,13 @@ Public API:
 
 from __future__ import annotations
 
-import io
 import logging
 import re
 from typing import Any
 
 import requests
+
+from src.data.pdf_text import download_and_extract_text, resolve_pdf_url
 
 log = logging.getLogger(__name__)
 
@@ -152,19 +153,6 @@ def _screener_period_to_date(period: str) -> str:
     return f"01-Jan-2000 00:00:00"
 
 
-def _resolve_pdf_url(href: str) -> str:
-    """Resolve view_pdf.php wrappers to a direct-download URL."""
-    if "view_pdf.php" in href:
-        from urllib.parse import urlparse, parse_qs, urljoin
-        parsed = urlparse(href)
-        qs = parse_qs(parsed.query)
-        path = (qs.get("path") or [""])[0]
-        if path:
-            base = f"{parsed.scheme}://{parsed.netloc}"
-            return urljoin(base, "/" + path.lstrip("/"))
-    return href
-
-
 def fetch_transcript_links(symbol: str, limit: int = 8) -> tuple[list[dict], str]:
     """
     Fetch up to `limit` concall transcript links from Screener.in for the given symbol.
@@ -208,7 +196,7 @@ def fetch_transcript_links(symbol: str, limit: int = 8) -> tuple[list[dict], str
         if not href:
             continue
 
-        href = _resolve_pdf_url(href)
+        href = resolve_pdf_url(href)
         date_str = _screener_period_to_date(period)
 
         results.append({
@@ -308,53 +296,16 @@ def fetch_company_updates_data(symbol: str) -> dict[str, list]:
     return result
 
 
-def _extract_text_from_pdf_bytes(content: bytes, source: str = "") -> str:
-    """Extract plain text from PDF bytes. Returns '' on failure."""
-    try:
-        from pypdf import PdfReader
-        reader = PdfReader(io.BytesIO(content))
-        pages_text = [page.extract_text() or "" for page in reader.pages]
-        return "\n".join(pages_text).strip()[:_MAX_CHARS_PER_PDF]
-    except Exception as e:
-        log.warning("concall: PDF extraction failed for %s: %s", source, e)
-        return ""
-
-
-def _extract_text_from_zip_bytes(content: bytes, source: str = "") -> str:
-    """Extract and concatenate text from all PDFs inside a ZIP archive."""
-    import zipfile
-    try:
-        with zipfile.ZipFile(io.BytesIO(content)) as zf:
-            pdf_names = [n for n in zf.namelist() if n.lower().endswith(".pdf")]
-            if not pdf_names:
-                log.warning("concall: ZIP contains no PDFs: %s", source)
-                return ""
-            texts = []
-            for name in pdf_names:
-                with zf.open(name) as f:
-                    text = _extract_text_from_pdf_bytes(f.read(), f"{source}/{name}")
-                if text:
-                    texts.append(text)
-            combined = "\n\n".join(texts)
-            return combined[:_MAX_CHARS_PER_PDF]
-    except Exception as e:
-        log.warning("concall: ZIP extraction failed for %s: %s", source, e)
-        return ""
-
-
 def _extract_pdf_text(link: str, session: requests.Session) -> str:
-    """Download a PDF or ZIP from NSE and extract plain text. Returns '' on failure."""
-    try:
-        resp = session.get(link, timeout=30)
-        resp.raise_for_status()
-        content = resp.content
-    except Exception as e:
-        log.warning("concall: failed to download %s: %s", link, e)
-        return ""
-
-    if link.lower().endswith(".zip"):
-        return _extract_text_from_zip_bytes(content, link)
-    return _extract_text_from_pdf_bytes(content, link)
+    """Download a PDF or ZIP and extract plain text (concall cap). Returns '' on failure."""
+    return download_and_extract_text(
+        link,
+        session,
+        max_pdf_chars=_MAX_CHARS_PER_PDF,
+        max_zip_per_pdf=_MAX_CHARS_PER_PDF,
+        max_zip_total=_MAX_CHARS_PER_PDF,
+        timeout=30,
+    )
 
 
 def get_concall_transcripts(symbol: str, exchange: str = "NSE", limit: int = 8) -> list[dict[str, Any]]:

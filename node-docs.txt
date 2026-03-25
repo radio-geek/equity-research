@@ -216,31 +216,37 @@ KNOWN LIMITATIONS / FUTURE IMPROVEMENTS
 ================================================================================
 NODE: auditor_flags
 File: src/nodes/auditor_flags.py
-Prompt: src/nodes/prompts.py → auditor_flags_prompt(), _last_5_fy()
-Schema: src/nodes/schemas.py → AuditorFlagsStructured. Invoke: invoke_llm_structured(..., AuditorFlagsStructured).
-Report: src/report/templates/base.html (section: "⚠ Auditor Flags & Qualifications")
+Data: src/data/screener_annual_report.py (latest AR from Screener + governance excerpt),
+      src/data/pdf_text.py (shared PDF/ZIP extraction; concall reuses this)
+Prompt: auditor_flags_from_annual_report_prompt() when AR excerpt succeeds; else
+        auditor_flags_prompt(), _last_5_fy()
+Schema: AuditorFlagsStructured (Markdown executive summary), AuditorEvent (category,
+        concern_level Hard/Soft/Needs follow-up, evidence, follow_up_question, etc.;
+        max 5 events after LLM; legacy "description" coalesced into issue).
+CLI: scripts/run_governance_from_ar.py SYMBOL [--extract-only] — Screener slug (e.g. SIMPLEXCAS).
+Report: src/report/templates/base.html (section: "Governance & auditor review"; forensic summary + max 5 timeline rows)
          backend/pdf_render.py: _auditor_timeline_to_html() when auditor_flags_structured
-         present; else _markdown_to_html(auditor_flags). Timeline: descending by date,
-         red-flag items highlighted. CSS: src/report/styles.css (.audit-timeline, etc.)
-         frontend ReportA.tsx: AuditorTimelineView when auditorFlagsStructured.events present;
-         else ReactMarkdown(auditorFlags). Section shown if auditor_flags or structured has content.
+         present; else _markdown_to_html(auditor_flags). Summary rendered as Markdown;
+         timeline: severity-tier sort (hard before soft/follow-up), soft/follow-up styles.
+         CSS: src/report/styles.css (.audit-timeline, --soft-flag, --follow-up, evidence).
+         frontend ReportA.tsx: section title "Governance & auditor review"; timeline when
+         structured summary or events present; else ReactMarkdown(auditorFlags).
 ================================================================================
 
 WHAT THIS NODE DOES
 --------------------
-Uses the OpenAI Responses API (with web_search_preview) to search for and document:
-1. Auditor qualifications (qualified opinions) in annual reports — last 5 years
-2. Emphasis of matter notes
-3. Going concern doubts
-4. CARO (Companies Auditor's Report Order) qualifications
-5. Secretarial audit observations
-6. Auditor resignations / changes (red flag)
-Returns structured JSON: { summary, events[] }. Each event has date (YYYY-MM or YYYY for
-ordering), fy, type, issue, is_red_flag, optional status, management_response. Node
-parses JSON, normalises date from fy if missing, sorts events by date descending (latest
-at top). State: auditor_flags (summary string), auditor_flags_structured (full object).
-Report and frontend render a timeline with latest year/month at top; items with
-is_red_flag true are visually highlighted.
+Primary path: resolve the latest annual report link on Screener.in (Documents → Annual
+reports) for state.symbol, download PDF or ZIP, extract plain text, build a keyword-window
+governance excerpt (auditor report, CARO, related party, corporate governance, litigation,
+etc., cap ~120k chars), then call invoke_llm_structured(..., use_web_search=False) with
+excerpt-only instructions.
+
+Fallback: no link, download failure, or excerpt below ~1500 chars → previous behavior:
+web search + auditor_flags_prompt (~5 FYs).
+
+Output { summary, events[] } with types including Related Party Disclosure, Corporate
+Governance, Litigation or Contingency plus audit categories. Events sorted by date
+descending. State: auditor_flags (summary string), auditor_flags_structured (full object).
 
 GRAPH WIRING
 -------------
@@ -248,17 +254,10 @@ GRAPH WIRING
 - graph.add_edge("auditor_flags", "aggregate")
 - state fields: auditor_flags: NotRequired[str], auditor_flags_structured: NotRequired[dict]
 
-SYSTEM PROMPT DESIGN (auditor_flags_prompt)
+SYSTEM PROMPT DESIGN
 --------------------------------------------
-- **Web search required:** MUST use web search. Search BSE/NSE filings, annual reports,
-  Screener, Trendlyne, MoneyControl. _last_5_fy() injects explicit FY list (e.g. FY25–FY21).
-- Per event: date (YYYY-MM preferred; Indian FY year-end March → 2025-03 for FY25), fy,
-  type (Qualified Opinion, Emphasis of Matter, Going Concern, CARO, Secretarial Audit,
-  Auditor Change, Other), issue (one short line), is_red_flag (true for qualifications,
-  going concern, auditor resignation, filing delays, restatements).
-- Optional: status (Resolved/Recurring/Pending), management_response (one line).
-- Output: single JSON object only. summary (string), events (array). List events in
-  descending order by date. If no findings, events: [] and summary explaining search.
+- AR path: single FY; excerpt only; no web.
+- Web fallback: unchanged (web search mandatory; _last_5_fy(); audit/governance search strategy).
 
 CSS CLASSES (timeline)
 -----------------------
@@ -268,11 +267,19 @@ CSS CLASSES (timeline)
 | --auditor-change | --other, .audit-timeline-status, .audit-timeline-issue,
 .audit-timeline-mgmt.
 
+SAMPLE CLI (extract-only) — SIMPLEXCAS — 2026-03-25
+----------------------------------------------------
+PYTHONPATH=. python scripts/run_governance_from_ar.py SIMPLEXCAS --extract-only
+
+Observed: FY25 PDF URL from BSE (Screener-linked); raw extracted text ~334k characters;
+governance excerpt ~120k. Full JSON summary/events: run without --extract-only with
+OPENAI_API_KEY set.
+
 KNOWN LIMITATIONS / FUTURE IMPROVEMENTS
 -----------------------------------------
-- Relies on LLM web search; older annual reports may not be indexed
-- CARO/secretarial details may be partial without actual PDF access
-- Consider BSE filings scraper for annual report PDFs in future
+- Primary path uses one (latest) AR only; broader history still needs web fallback or future multi-PDF.
+- symbol must match Screener slug (RELIANCE works; BSE-only names may use e.g. SIMPLEXCAS).
+- Scanned PDFs may yield thin text and fall back to web search.
 ================================================================================
 
 ================================================================================

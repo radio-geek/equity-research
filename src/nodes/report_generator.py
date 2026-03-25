@@ -48,8 +48,6 @@ def _build_report_payload(state: ResearchState) -> dict[str, Any]:
         payload["management_research"] = state["management_research"]
     mp = state.get("management_people")
     payload["management_people"] = mp if isinstance(mp, list) else []
-    mgn = state.get("management_governance_news")
-    payload["management_governance_news"] = mgn if isinstance(mgn, list) else []
     if state.get("financial_risk"):
         payload["financial_risk"] = state["financial_risk"]
     if state.get("auditor_flags") is not None:

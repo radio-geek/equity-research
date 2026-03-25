@@ -8,9 +8,9 @@ parsing and validating JSON from the LLM. See:
 
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # --- Company overview ---
@@ -88,15 +88,15 @@ class GovernanceNewsItem(BaseModel):
 
 
 class ManagementStructured(BaseModel):
-    """Structured management and governance output."""
+    """Structured management output."""
 
     people: list[ManagementPerson] = Field(
         ...,
         description="Promoters, key executives, board members (typically 5-12)",
     )
     governance_news: list[GovernanceNewsItem] = Field(
-        ...,
-        description="Governance-only news from last 1 year",
+        default_factory=list,
+        description="Deprecated; governance analysis moved to auditor_flags node",
     )
     rpt_and_gaps: str = Field(
         "",
@@ -140,19 +140,81 @@ class SectoralFromTranscripts(BaseModel):
 
 
 class AuditorEvent(BaseModel):
-    """One auditor-related event (qualification, EOM, etc.)."""
+    """One governance / auditor finding card (max 5 per report)."""
+
     date: str | None = Field(None, description="YYYY-MM or YYYY")
     fy: str | None = Field(None, description="e.g. FY24")
-    description: str = Field("", description="Short description of the event")
+    category: str | None = Field(
+        None,
+        description=(
+            "One of: Board remuneration, Related party, Auditor report, "
+            "Receivables & working capital, Contingent liabilities, Other"
+        ),
+    )
+    type: str = Field(
+        "Other",
+        description=(
+            "Specific label e.g. Qualified Opinion, Emphasis of Matter, CARO, "
+            "Related Party Disclosure, Contingent liability, Inventory build-up, "
+            "Receivable ageing, Loans & advances, Remuneration spike, Other"
+        ),
+    )
+    signal: str = Field(
+        "yellow",
+        description="Exactly one of: red (material risk), yellow (moderate / monitor), green (clean / positive)",
+    )
+    issue: str = Field("", description="What was found and why it matters (1–3 sentences)")
+    evidence: str | None = Field(
+        None, description="Exact AR note, section, or short quoted language when possible"
+    )
+    status: str | None = Field(
+        None, description="Resolved, Recurring, or Pending when applicable"
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coalesce_legacy(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        out = dict(data)
+        issue = (out.get("issue") or "").strip()
+        desc = (out.get("description") or "").strip()
+        if not issue and desc:
+            out["issue"] = desc
+        out.pop("description", None)
+        if not (out.get("type") or "").strip():
+            out["type"] = "Other"
+        cl = (out.get("concern_level") or "").lower()
+        if "signal" not in out or not out.get("signal"):
+            if out.get("is_red_flag") or "hard" in cl:
+                out["signal"] = "red"
+            elif "soft" in cl:
+                out["signal"] = "yellow"
+            elif "follow" in cl:
+                out["signal"] = "yellow"
+            else:
+                out["signal"] = "yellow"
+        out.pop("concern_level", None)
+        out.pop("is_red_flag", None)
+        out.pop("management_response", None)
+        out.pop("follow_up_question", None)
+        return out
 
 
 class AuditorFlagsStructured(BaseModel):
-    """Structured auditor flags: summary and timeline of events."""
+    """Single governance verdict + top findings (cap 5)."""
 
-    summary: str = Field(..., description="Summary of auditor qualifications and events")
+    verdict: str = Field(
+        "OK",
+        description="Overall governance verdict: exactly one of RISK, OK, GOOD",
+    )
+    summary: str = Field(
+        "",
+        description="2–4 sentence plain text explanation supporting the verdict",
+    )
     events: list[AuditorEvent] = Field(
         default_factory=list,
-        description="Chronological list of audit-related events",
+        description="At most 5 findings, most material first. Use signal red/yellow/green.",
     )
 
 
