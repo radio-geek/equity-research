@@ -18,7 +18,7 @@ const POLL_INTERVAL_MS = 2500
 const SECTION_NAVS = [
   { id: 'section-overview',   label: 'Overview' },
   { id: 'section-management', label: 'Management' },
-  { id: 'section-auditor',    label: 'Auditor' },
+  { id: 'section-auditor',    label: 'Governance' },
   { id: 'section-financials', label: 'Financials' },
   { id: 'section-concall',    label: 'Concalls' },
   { id: 'section-sectoral',   label: 'Sectoral' },

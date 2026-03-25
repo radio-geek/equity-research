@@ -5,11 +5,13 @@
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";  -- for gen_random_uuid()
 
 CREATE TABLE IF NOT EXISTS sessions (
-  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  created_at TIMESTAMPTZ DEFAULT now(),
-  expires_at TIMESTAMPTZ NOT NULL,
-  revoked    BOOLEAN NOT NULL DEFAULT FALSE
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at   TIMESTAMPTZ DEFAULT now(),
+  expires_at   TIMESTAMPTZ NOT NULL,
+  revoked      BOOLEAN NOT NULL DEFAULT FALSE,
+  ip_address   TEXT,
+  user_agent   TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions (user_id);

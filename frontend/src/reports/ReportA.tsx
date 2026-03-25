@@ -10,15 +10,6 @@ import { SectoralCard } from '../components/SectoralCard'
 import { ValueChainFlowchart } from '../components/ValueChainFlowchart'
 import { useAuth } from '../contexts/AuthContext'
 
-const auditTypeBadgeBg: Record<string, string> = {
-  'qualified opinion': '#b71c1c',
-  'emphasis of matter': '#e65100',
-  'going concern': '#4a148c',
-  caro: '#1565c0',
-  'secretarial audit': '#004d40',
-  'auditor change': '#880e4f',
-}
-
 function auditEventDateLabel(fy: string | undefined, date: string | undefined): string {
   if (!date) return fy ?? '—'
   if (date.length >= 7 && date[4] === '-') {
@@ -32,71 +23,148 @@ function auditEventDateLabel(fy: string | undefined, date: string | undefined): 
 
 type AuditorEvent = NonNullable<NonNullable<ReportView['auditorFlagsStructured']>['events']>[number]
 
-function AuditorTimelineView({ summary, events }: { summary?: string; events: AuditorEvent[] }) {
+const SIGNAL_META: Record<string, { label: string; color: string; bg: string; border: string }> = {
+  red:    { label: 'RISK',   color: '#c62828', bg: 'rgba(198, 40, 40, 0.08)',   border: '#c62828' },
+  yellow: { label: 'OK',     color: '#e65100', bg: 'rgba(239, 108, 0, 0.06)',   border: '#ef6c00' },
+  green:  { label: 'GOOD',   color: '#047857', bg: 'rgba(5, 150, 105, 0.06)',   border: '#059669' },
+}
+
+const VERDICT_META: Record<string, { label: string; color: string; bg: string }> = {
+  RISK: { label: 'RISK', color: '#fff', bg: '#c62828' },
+  OK:   { label: 'OK',   color: '#fff', bg: '#e65100' },
+  GOOD: { label: 'GOOD', color: '#fff', bg: '#059669' },
+}
+
+function AuditorTimelineView({ verdict, summary, events }: { verdict?: string; summary?: string; events: AuditorEvent[] }) {
+  const v = VERDICT_META[(verdict ?? 'OK').toUpperCase()] ?? VERDICT_META.OK
+
   return (
     <div style={{ color: 'var(--text)', fontSize: '0.95rem' }}>
-      {summary ? <p style={{ margin: '0 0 1rem 0', fontWeight: 600, color: 'var(--textMuted)' }}>{summary}</p> : null}
-      <div style={{ borderLeft: '3px solid var(--border)', paddingLeft: '1.2rem', marginLeft: 2 }}>
-        {events.map((ev, i) => {
-          const typeKey = (ev.type ?? 'other').toLowerCase()
-          const badgeBg = auditTypeBadgeBg[typeKey] ?? '#546e7a'
-          const isRed = ev.isRedFlag === true
-          return (
-            <div
-              key={i}
-              style={{
-                marginBottom: '1rem',
-                padding: '10px 12px',
-                background: isRed ? 'rgba(198, 40, 40, 0.08)' : 'var(--surface)',
-                borderLeft: `4px solid ${isRed ? '#c62828' : 'var(--border)'}`,
-                borderRadius: 6,
-              }}
-            >
-              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--textMuted)' }}>
-                  {auditEventDateLabel(ev.fy, ev.date)}
-                </span>
-                <span
-                  style={{
-                    display: 'inline-block',
-                    padding: '2px 8px',
-                    borderRadius: 10,
-                    fontSize: '0.7rem',
-                    fontWeight: 700,
-                    color: '#fff',
-                    background: badgeBg,
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  {ev.type ?? 'Other'}
-                </span>
-                {ev.status ? (
+      {/* Verdict badge + summary */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 14,
+          marginBottom: events.length ? '1.25rem' : 0,
+          padding: '14px 16px',
+          background: 'var(--surface)',
+          borderRadius: 10,
+        }}
+      >
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '6px 18px',
+            borderRadius: 8,
+            fontSize: '0.85rem',
+            fontWeight: 800,
+            letterSpacing: '0.06em',
+            color: v.color,
+            background: v.bg,
+            flexShrink: 0,
+            marginTop: 2,
+          }}
+        >
+          {v.label}
+        </span>
+        <p style={{ margin: 0, fontSize: '0.9rem', lineHeight: 1.55, color: 'var(--textMuted)' }}>
+          {summary || 'No governance issues found.'}
+        </p>
+      </div>
+
+      {/* Event cards */}
+      {events.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+          {events.map((ev, i) => {
+            const sig = SIGNAL_META[(ev.signal ?? 'yellow').toLowerCase()] ?? SIGNAL_META.yellow
+            return (
+              <div
+                key={i}
+                style={{
+                  padding: '14px 16px',
+                  background: sig.bg,
+                  borderLeft: `4px solid ${sig.border}`,
+                  borderRadius: 8,
+                }}
+              >
+                {/* Header row: signal tag + category + date + status */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
                   <span
                     style={{
-                      fontSize: '0.7rem',
-                      padding: '2px 6px',
-                      borderRadius: 6,
-                      fontWeight: 600,
+                      display: 'inline-block',
+                      padding: '2px 10px',
+                      borderRadius: 10,
+                      fontSize: '0.65rem',
+                      fontWeight: 800,
+                      letterSpacing: '0.05em',
                       textTransform: 'uppercase',
-                      marginLeft: 'auto',
-                      background: ev.status === 'Resolved' ? 'rgba(5, 150, 105, 0.2)' : ev.status === 'Pending' ? 'rgba(255, 111, 0, 0.25)' : 'rgba(183, 28, 28, 0.2)',
-                      color: ev.status === 'Resolved' ? '#047857' : ev.status === 'Pending' ? '#e65100' : '#b71c1c',
+                      color: '#fff',
+                      background: sig.border,
                     }}
                   >
-                    {ev.status}
+                    {sig.label}
                   </span>
-                ) : null}
+                  {ev.category && (
+                    <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text)' }}>
+                      {ev.category}
+                    </span>
+                  )}
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--textMuted)', fontFamily: 'var(--fontMono)', marginLeft: 'auto' }}>
+                    {auditEventDateLabel(ev.fy, ev.date)}
+                  </span>
+                  {ev.status && (
+                    <span
+                      style={{
+                        fontSize: '0.65rem',
+                        padding: '2px 8px',
+                        borderRadius: 10,
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        background: ev.status === 'Resolved' ? 'rgba(5, 150, 105, 0.15)' : ev.status === 'Pending' ? 'rgba(255, 111, 0, 0.15)' : 'rgba(183, 28, 28, 0.15)',
+                        color: ev.status === 'Resolved' ? '#047857' : ev.status === 'Pending' ? '#e65100' : '#b71c1c',
+                      }}
+                    >
+                      {ev.status}
+                    </span>
+                  )}
+                </div>
+
+                {/* Type label */}
+                {ev.type && ev.type !== 'Other' && (
+                  <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--textMuted)', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 4 }}>
+                    {ev.type}
+                  </div>
+                )}
+
+                {/* Issue text */}
+                <p style={{ margin: 0, fontSize: '0.9rem', lineHeight: 1.5, color: 'var(--text)' }}>{ev.issue ?? '—'}</p>
+
+                {/* Evidence quote */}
+                {ev.evidence && (
+                  <div
+                    style={{
+                      margin: '10px 0 0 0',
+                      padding: '8px 12px',
+                      borderLeft: '3px solid var(--border)',
+                      background: 'rgba(255,255,255,0.04)',
+                      borderRadius: 4,
+                      fontSize: '0.82rem',
+                      lineHeight: 1.4,
+                      color: 'var(--textMuted)',
+                      fontStyle: 'italic',
+                    }}
+                  >
+                    "{ev.evidence}"
+                  </div>
+                )}
               </div>
-              <p style={{ margin: 0, fontSize: '0.9rem', lineHeight: 1.4 }}>{ev.issue ?? '—'}</p>
-              {ev.managementResponse ? (
-                <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: 'var(--textMuted)', fontStyle: 'italic' }}>
-                  {ev.managementResponse}
-                </p>
-              ) : null}
-            </div>
-          )
-        })}
-      </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
@@ -290,7 +358,7 @@ export function ReportA({ report }: ReportAProps) {
         )}
       </Section>
 
-      <Section title="Management & governance" id="section-management">
+      <Section title="Management & board" id="section-management">
         {report.managementPeople?.length ? (
           <>
             <h2 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.75rem', color: 'var(--text)' }}>Promoter & Board</h2>
@@ -332,65 +400,27 @@ export function ReportA({ report }: ReportAProps) {
         {report.managementResearch ? (
           <div
             className="report-markdown"
-            style={{ color: 'var(--text)', fontSize: '0.95rem', marginBottom: report.managementGovernanceNews?.length ? '1.25rem' : 0 }}
+            style={{ color: 'var(--text)', fontSize: '0.95rem' }}
           >
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{report.managementResearch}</ReactMarkdown>
           </div>
         ) : null}
-        {report.managementGovernanceNews?.length ? (
-          <>
-            <h2 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.75rem', color: 'var(--text)' }}>Governance news</h2>
-            <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-              {report.managementGovernanceNews.map((n, i) => (
-                <li
-                  key={i}
-                  style={{
-                    padding: '0.5rem 0.65rem',
-                    marginBottom: '0.5rem',
-                    borderRadius: 6,
-                    borderLeft: `4px solid ${n.sentiment === 'positive' ? 'var(--green)' : n.sentiment === 'negative' ? 'var(--red)' : 'var(--border)'}`,
-                    background: 'var(--surface)',
-                    fontSize: '0.9rem',
-                    lineHeight: 1.45,
-                  }}
-                >
-                  {n.sentiment && n.sentiment !== 'neutral' ? (
-                    <span
-                      style={{
-                        display: 'inline-block',
-                        padding: '2px 8px',
-                        borderRadius: 10,
-                        fontSize: '0.7rem',
-                        fontWeight: 700,
-                        textTransform: 'uppercase',
-                        marginRight: '0.5rem',
-                        background: n.sentiment === 'positive' ? 'rgba(5, 150, 105, 0.2)' : 'rgba(220, 38, 38, 0.2)',
-                        color: n.sentiment === 'positive' ? 'var(--green)' : 'var(--red)',
-                      }}
-                    >
-                      {n.sentiment}
-                    </span>
-                  ) : null}
-                  {n.text ?? '—'}
-                </li>
-              ))}
-            </ul>
-          </>
-        ) : null}
-        {!report.managementPeople?.length && !report.managementResearch && !report.managementGovernanceNews?.length ? (
-          <p style={{ color: 'var(--textMuted)', fontSize: '0.95rem' }}>No management & governance data available.</p>
+        {!report.managementPeople?.length && !report.managementResearch ? (
+          <p style={{ color: 'var(--textMuted)', fontSize: '0.95rem' }}>No management data available.</p>
         ) : null}
       </Section>
 
       {(() => {
         const af = report.auditorFlagsStructured
-        const hasTimeline = (af?.events?.length ?? 0) > 0
-        return hasTimeline && af ? (
-          <Section title="Auditor flags & qualifications" id="section-auditor">
-            <AuditorTimelineView summary={af.summary} events={af.events ?? []} />
+        const hasStructuredBody =
+          !!af &&
+          (((af.events?.length ?? 0) > 0) || !!(af.summary && String(af.summary).trim()) || !!af.verdict)
+        return hasStructuredBody && af ? (
+          <Section title="Governance & auditor review" id="section-auditor">
+            <AuditorTimelineView verdict={af.verdict} summary={af.summary} events={af.events ?? []} />
           </Section>
         ) : report.auditorFlags != null && report.auditorFlags !== '' ? (
-          <Section title="Auditor flags & qualifications" id="section-auditor">
+          <Section title="Governance & auditor review" id="section-auditor">
             <div className="report-markdown" style={{ color: 'var(--text)', fontSize: '0.95rem', margin: 0 }}>
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{report.auditorFlags}</ReactMarkdown>
             </div>

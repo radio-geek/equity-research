@@ -22,7 +22,7 @@ This file is the **README for AI coding agents** working on the Equity Research 
 
 - **PostgreSQL** (required for auth and caching):
   - Create DB: `createdb equity_research` (or via psql)
-  - Run migrations: `psql -U postgres -d equity_research -f backend/migrations/001_init.sql` then `002_sessions.sql`
+  - Run migrations: `psql ... -f backend/migrations/001_init.sql` through `005_reports_requested_by_generation_ms.sql` (see README PostgreSQL section for full list)
   - Set `DATABASE_URL`, `JWT_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `FRONTEND_URL` in `.env`
 
 - **Backend** (from repo root, with venv active):  
@@ -51,7 +51,7 @@ This file is the **README for AI coding agents** working on the Equity Research 
 | Report HTML/CSS | `src/report/templates/`, `src/report/styles.css`, `src/report/charts.py` |
 | Backend API | `backend/main.py`, `backend/reports.py`, `backend/symbols.py`, `backend/cache.py`, `backend/pdf_render.py`, `backend/feedback_store.py`, `backend/job_store.py` |
 | Auth & sessions | `backend/auth.py` (Google OAuth2, JWT, DB-backed sessions), `backend/db.py` (psycopg2 pool) |
-| DB migrations | `backend/migrations/001_init.sql` (users, reports, feedback), `backend/migrations/002_sessions.sql` |
+| DB migrations | `backend/migrations/*.sql` — start with `001_init.sql`, `002_sessions.sql`; `005_reports_requested_by_generation_ms.sql` adds `reports.requested_by` / `generation_ms` for cache writes |
 | Frontend auth | `frontend/src/contexts/AuthContext.tsx`, `frontend/src/components/Header.tsx`, `frontend/src/components/ProtectedRoute.tsx` |
 | Frontend | `frontend/src/` (Vite + React + TS) |
 | Config / env | `src/config.py`, `.env` (from `.env.example`) |

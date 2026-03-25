@@ -3,8 +3,8 @@ import { submitDetailedFeedback } from '../api'
 
 const REPORT_SECTIONS = [
   'Company Overview',
-  'Management & Governance',
-  'Auditor Flags & Qualifications',
+  'Management & Board',
+  'Governance & auditor review',
   '5-Year Financial Trend',
   'Concall Evaluation',
   'Sectoral Headwinds & Tailwinds',

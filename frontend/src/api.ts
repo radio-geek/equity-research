@@ -1,4 +1,15 @@
-const API_BASE = import.meta.env.VITE_API_URL ?? ''
+/** Backend base URL (no trailing slash). In dev, default matches the *hostname* of the page on :8000
+ *  so OAuth cookies line up with GOOGLE_REDIRECT_URI (must be same host: localhost vs 127.0.0.1). */
+function defaultDevApiBase(): string {
+  if (typeof window === 'undefined') return 'http://localhost:8000'
+  const { protocol, hostname } = window.location
+  return `${protocol}//${hostname}:8000`
+}
+
+const _envApi = import.meta.env.VITE_API_URL
+const API_BASE =
+  (typeof _envApi === 'string' && _envApi.trim() !== '' ? _envApi.trim().replace(/\/$/, '') : '') ||
+  (import.meta.env.DEV ? defaultDevApiBase() : '')
 
 // ── Auth helpers ──────────────────────────────────────────────────────────────
 
@@ -24,9 +35,9 @@ function authHeaders(): Record<string, string> {
 export function loginWithGoogle(): void {
   const returnTo = window.location.pathname + window.location.search
   const params = new URLSearchParams()
+  params.set('client_origin', window.location.origin)
   if (returnTo && returnTo !== '/') params.set('return_to', returnTo)
-  const qs = params.toString()
-  window.location.href = `${API_BASE}/auth/google${qs ? `?${qs}` : ''}`
+  window.location.href = `${API_BASE}/auth/google?${params.toString()}`
 }
 
 export interface User {
@@ -116,15 +127,17 @@ export interface ReportPayload {
   financial_risk?: string
   auditor_flags?: string | null
   auditor_flags_structured?: {
+    verdict?: string
     summary?: string
     events?: Array<{
       date?: string
       fy?: string
+      category?: string
       type?: string
+      signal?: string
       issue?: string
-      is_red_flag?: boolean
+      evidence?: string
       status?: string
-      management_response?: string
     }>
   } | null
   concall?: Record<string, unknown> | null
@@ -180,15 +193,17 @@ export interface ReportView {
   financialRisk?: string
   auditorFlags?: string | null
   auditorFlagsStructured?: {
+    verdict?: string
     summary?: string
     events?: Array<{
       date?: string
       fy?: string
+      category?: string
       type?: string
+      signal?: string
       issue?: string
-      isRedFlag?: boolean
+      evidence?: string
       status?: string
-      managementResponse?: string
     }>
   } | null
   concall?: ReportPayload['concall']
@@ -268,14 +283,20 @@ export function mapReportPayloadToView(payload: ReportPayload | null | undefined
         ? s.events.map((e: Record<string, unknown>): Ev => ({
             date: e.date as string | undefined,
             fy: e.fy as string | undefined,
+            category: e.category as string | undefined,
             type: e.type as string | undefined,
-            issue: e.issue as string | undefined,
-            isRedFlag: e.is_red_flag as boolean | undefined,
+            signal: (e.signal as string | undefined) ?? (() => {
+              const cl = ((e.concern_level as string) ?? '').toLowerCase()
+              if (e.is_red_flag || cl.includes('hard')) return 'red'
+              if (cl.includes('soft') || cl.includes('follow')) return 'yellow'
+              return 'yellow'
+            })(),
+            issue: (e.issue ?? e.description) as string | undefined,
+            evidence: e.evidence as string | undefined,
             status: e.status as string | undefined,
-            managementResponse: e.management_response as string | undefined,
           }))
         : undefined
-      return { summary: s.summary, events }
+      return { verdict: s.verdict, summary: s.summary, events }
     })(),
     concall: payload.concall ?? undefined,
     yearlyMetrics: financials.yearly_metrics ?? [],

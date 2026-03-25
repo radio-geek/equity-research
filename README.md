@@ -73,6 +73,9 @@ psql -U postgres -d equity_research -f backend/migrations/003_error_logs.sql
 
 # Concall transcript cache table
 psql -U postgres -d equity_research -f backend/migrations/004_concall_transcripts.sql
+
+# Report cache columns (requested_by, generation_ms) — required for set_cached_report()
+psql -U postgres -d equity_research -f backend/migrations/005_reports_requested_by_generation_ms.sql
 ```
 
 If using the macOS installer, prefix with the full path e.g. `/Library/PostgreSQL/18/bin/psql`.
@@ -317,6 +320,7 @@ On the backend (e.g. Render), set `FRONTEND_URL` to your Pages origin, e.g. `htt
   - `backend/feedback_store.py` – Feedback stored in `feedback` table
   - `backend/migrations/001_init.sql` – Initial schema (users, reports, feedback)
   - `backend/migrations/002_sessions.sql` – Sessions table (required for Google Auth)
+  - `backend/migrations/005_reports_requested_by_generation_ms.sql` – Extra columns on `reports` for cache writes
 - `frontend/` – Vite + React + TypeScript: landing (search, indices ticker, review carousel), report page with PDF download and feedback (thumbs up/down + comment).
 
 ## Contributing / Node Development
