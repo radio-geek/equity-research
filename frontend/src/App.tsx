@@ -22,13 +22,30 @@ function AnalyticsInit() {
 }
 
 function Footer() {
+  const year = new Date().getFullYear()
   return (
-    <footer className="app-footer">
-      <div className="app-footer-inner">
-        <p className="app-footer-disclaimer">
-          This report is for information purposes only and does not constitute investment advice or a recommendation.
-          For investment recommendations, please consult a SEBI registered investment advisor.
-        </p>
+    <footer className="se-footer">
+      <div className="se-footer__inner">
+        <div className="se-footer__left">
+          <p className="se-footer__copyright">
+            &copy; {year} Equity Research. All rights reserved.
+          </p>
+          <p className="se-footer__disclaimer">
+            This site and its reports are for information only. We are{' '}
+            <strong>not</strong> a SEBI-registered investment adviser; nothing here is investment advice, a
+            recommendation, or an offer to buy or sell securities. For investment guidance, consult a SEBI-registered
+            investment adviser.
+          </p>
+          <div className="se-footer__secondary-links">
+            <a href="/">Compliance</a>
+            <a href="/">Disclosures</a>
+          </div>
+        </div>
+        <div className="se-footer__links">
+          <a href="/">Privacy Policy</a>
+          <a href="/">Terms of Service</a>
+          <a href="/">Contact Support</a>
+        </div>
       </div>
     </footer>
   )
