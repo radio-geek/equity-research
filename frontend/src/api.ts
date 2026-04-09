@@ -426,3 +426,17 @@ export async function getMarketIndices(): Promise<IndexTick[]> {
   const data = await res.json()
   return data.indices as IndexTick[]
 }
+
+export async function fetchLiveQuote(symbol: string, exchange = 'NSE'): Promise<ReportView['screenerQuote']> {
+  const res = await fetch(`${API_BASE}/api/quote/${encodeURIComponent(symbol)}?exchange=${exchange}`)
+  if (!res.ok) throw new Error('Quote fetch failed')
+  const data = await res.json()
+  const q = data.quote
+  return {
+    currentPrice: q.current_price,
+    priceChangePct: q.price_change_pct,
+    marketCap: q.market_cap,
+    stockPe: q.stock_pe,
+    lastPriceUpdated: q.last_price_updated,
+  }
+}

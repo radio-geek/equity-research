@@ -1,7 +1,9 @@
 /** Report Type A: Dark dashboard — KPI strip, sections, charts and table. */
+import { useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { ReportView } from '../api'
+import { fetchLiveQuote } from '../api'
 import { ConcallSection } from '../components/ConcallSection'
 import { FlagsList } from '../components/FlagsList'
 import { OverviewTimeline } from '../components/OverviewTimeline'
@@ -206,6 +208,16 @@ export function ReportA({ report }: ReportAProps) {
   const fiveYearTrend = getFiveYearTrend(report)
   const ttm = report.yearlyMetrics?.find((m) => m.period_label === 'TTM') ?? report.yearlyMetrics?.[report.yearlyMetrics.length - 1]
   const sq = report.screenerQuote
+  const [liveQuote, setLiveQuote] = useState<ReportView['screenerQuote'] | undefined>(undefined)
+
+  useEffect(() => {
+    if (!report.symbol) return
+    fetchLiveQuote(report.symbol, report.exchange ?? 'NSE')
+      .then(setLiveQuote)
+      .catch(() => {}) // silently fall back to cached price
+  }, [report.symbol, report.exchange])
+
+  const displayQuote = liveQuote ?? sq
   const keyMetrics = report.keyMetrics
   const kpis =
     keyMetrics && Object.keys(keyMetrics).length > 0
@@ -219,7 +231,7 @@ export function ReportA({ report }: ReportAProps) {
             { label: 'CFO (Cr)', value: String(ttm.cfo_cr ?? '—'), trend: ttm.cfo_yoy_pct != null ? Number(ttm.cfo_yoy_pct) : undefined, lowerIsBetter: false },
             { label: 'EBITDA (Cr)', value: String(ttm.ebitda_cr ?? '—'), trend: ttm.ebitda_yoy_pct != null ? Number(ttm.ebitda_yoy_pct) : undefined, lowerIsBetter: false },
             { label: 'PAT (Cr)', value: String(ttm.pat_cr ?? '—'), trend: ttm.pat_yoy_pct != null ? Number(ttm.pat_yoy_pct) : undefined, lowerIsBetter: false },
-            ...(sq?.marketCap != null && sq.marketCap !== '' ? [{ label: 'Market Cap', value: sq.marketCap, trend: undefined as number | undefined, lowerIsBetter: false }] : []),
+            ...(displayQuote?.marketCap != null && displayQuote.marketCap !== '' ? [{ label: 'Market Cap', value: displayQuote.marketCap, trend: undefined as number | undefined, lowerIsBetter: false }] : []),
           ]
         : []
 
@@ -229,21 +241,21 @@ export function ReportA({ report }: ReportAProps) {
         <div style={{ fontSize: '0.875rem', color: 'var(--textMuted)' }}>{report.exchange} · {report.sector}</div>
         <h1 style={{ fontSize: '1.75rem', fontWeight: 700, margin: '0.25rem 0', color: 'var(--text)', display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: '0.5rem' }}>
           {report.companyName}
-          {sq?.currentPrice != null && (
+          {displayQuote?.currentPrice != null && (
             <>
               <span style={{ fontWeight: 600, color: 'var(--text)', marginLeft: '0.35rem' }}>
-                ₹ {sq.currentPrice.toLocaleString('en-IN')}
+                ₹ {displayQuote.currentPrice.toLocaleString('en-IN')}
               </span>
-              {sq?.priceChangePct && (
+              {displayQuote?.priceChangePct && (
                 <span
                   style={{
                     fontSize: '0.9em',
                     fontWeight: 600,
                     marginLeft: '0.25rem',
-                    color: sq.priceChangePct.startsWith('-') ? 'var(--red)' : 'var(--green)',
+                    color: displayQuote.priceChangePct.startsWith('-') ? 'var(--red)' : 'var(--green)',
                   }}
                 >
-                  {sq.priceChangePct}
+                  {displayQuote.priceChangePct}
                 </span>
               )}
             </>
@@ -251,8 +263,8 @@ export function ReportA({ report }: ReportAProps) {
         </h1>
         <div style={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: '0.5rem' }}>
           <span style={{ fontSize: '0.9rem', color: 'var(--accent)' }}>{report.symbol}</span>
-          {sq?.lastPriceUpdated && (
-            <span style={{ fontSize: '0.85rem', color: 'var(--textMuted)' }}> · {sq.lastPriceUpdated}</span>
+          {displayQuote?.lastPriceUpdated && (
+            <span style={{ fontSize: '0.85rem', color: 'var(--textMuted)' }}> · {displayQuote.lastPriceUpdated}</span>
           )}
         </div>
       </header>
