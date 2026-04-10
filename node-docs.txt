@@ -350,13 +350,13 @@ KNOWN LIMITATIONS / FUTURE IMPROVEMENTS
 ================================================================================
 
 ================================================================================
-NODE: management (Management & Governance)
+NODE: management (Management & board)
 File: src/nodes/management.py
 Prompt: src/nodes/prompts.py → management_prompt()
 Schema: src/nodes/schemas.py → ManagementStructured. Invoke: invoke_llm_structured(..., ManagementStructured).
-Report: src/report/templates/base.html (section: "Management & Governance")
+Report: src/report/templates/base.html (section: "Management & board")
         backend/pdf_render.py: passes management_people, management_governance_news to
-        template; management_research (rpt_and_gaps) as markdown → HTML
+        template; management_research (management_narrative) as markdown → HTML
         frontend ReportA.tsx: table (managementPeople), ReactMarkdown (managementResearch),
         governance news list (managementGovernanceNews with sentiment badges)
 CSS: src/report/styles.css — .management-people-table, .governance-news-list,
@@ -367,38 +367,37 @@ State: src/state.py — management_research (str), management_people (NotRequire
 
 WHAT THIS NODE DOES
 --------------------
-Generates the Management & Governance section using structured JSON from the LLM (web
+Generates the **Management & board** section using structured JSON from the LLM (web
 search mandatory). Output: (1) people table: promoters and board (name, designation,
-description); (2) governance_news: recent governance-related items with sentiment
-(positive/negative/neutral); (3) rpt_and_gaps: short Markdown for RPT summary and gaps.
-Node parses JSON, validates shape, normalizes people and news; on parse failure falls
-back to raw LLM output in management_research only.
+description); (2) governance_news: deprecated in schema (empty); (3) management_narrative:
+short Markdown on management/board only — **not** RPT (RPT lives in auditor_flags).
+Schema accepts legacy key `rpt_and_gaps` as alias for `management_narrative` when parsing.
+On parse failure falls back to placeholder text in management_research only.
 
 DATA FLOW
 ----------
 Inputs from state: company_name, symbol, meta, shareholding
-Output to state: management_research (str, always — RPT/gaps narrative or fallback);
+Output to state: management_research (str, always — management narrative or fallback);
                  management_people (list when parse OK);
-                 management_governance_news (list when parse OK)
+                 management_governance_news (list when parse OK; typically unused)
 
 STRUCTURED SCHEMA (LLM JSON)
 -----------------------------
 - people: [ { name, designation, description } ] — 1–3 sentence description per person
-- governance_news: [ { text, sentiment: "positive"|"negative"|"neutral" } ] — up to 5–8 items
-- rpt_and_gaps: string — Markdown for RPT summary and gaps/assumptions
+- governance_news: optional in schema; prompt does not request it (deprecated)
+- management_narrative: string — Markdown for management/board commentary and gaps (no RPT)
 
 PROMPT DESIGN (management_prompt)
 ----------------------------------
 Role: Equity research analyst. Output ONLY a single JSON object (no markdown/code fences).
-Web search (mandatory): promoter background, board composition, RPT, shareholding pledges,
-recent governance news (board changes, regulatory actions, awards, controversies).
-Schema: people (array of name/designation/description), governance_news (array of
-text/sentiment), rpt_and_gaps (string). Sentiment exactly one of positive, negative, neutral.
+Web search (mandatory): promoter background, key executives, board composition, pledges if
+material to management story. Explicitly **exclude** RPT and auditor-style items (handled in
+auditor_flags). Schema: people, management_narrative.
 
 HTML/CSS IN REPORT
 ------------------
 - Promoter & Board: <table class="management-people-table qoq-table"> with Name, Designation, Description
-- management_research: .section div (RPT and gaps narrative, markdown → HTML)
+- management_research: .section div (management narrative, markdown → HTML)
 - Governance news: <ul class="governance-news-list">; each <li class="governance-news-item governance-news-{sentiment}">
   with optional <span class="governance-news-badge governance-news-badge-positive|negative"> (no badge for neutral)
 
@@ -416,8 +415,8 @@ render only management_research / managementResearch as before (e.g. cached/old 
 
 KNOWN LIMITATIONS / FUTURE IMPROVEMENTS
 -----------------------------------------
-- RPT and pledge data depend on web search; BSE/NSE filing scrapers could improve accuracy
-- LLM may occasionally return malformed JSON; node falls back to raw text in management_research
+- Pledge and biographical data depend on web search quality; filing scrapers could improve accuracy
+- LLM may occasionally return malformed JSON; node falls back to placeholder text in management_research
 ================================================================================
 
 ================================================================================
@@ -489,11 +488,11 @@ Report: src/report/templates/base.html — 5-Year Financial Trend, trend insight
 
 WHAT THIS NODE DOES
 --------------------
-1. Fetches yearly + TTM metrics from Screener.in (scraped; URL https://www.screener.in/company/{symbol}/consolidated/) and TTM statements (P&L TTM column + latest BS). Parsing supports two layouts: standard (Sales, Operating Profit, Net Profit; Borrowings) and bank/financial (Revenue +, Profit before tax/Financing Profit, Net Profit +; Borrowing). Table detection and row-key fallbacks in src/data/screener_scraper.py and src/data/yearly_financials.py.
-2. Builds Financial Strength Scorecard (6 signals: revenue growth >10%, profit growth > revenue growth, ROE >15%, D/E <0.5, positive TTM OCF, margins stable/improving). Score 0–6, verdict text, verdict_tier (strong|average|weak), letter_grade (A/B/C/D/F). Not displayed in report (section removed).
-3. Builds 5-Year Financial Trend table (latest 5 years + TTM column from Screener): Revenue, Revenue Growth %, PAT, PAT Growth %, EPS, EBITDA Margin %, NPM %, Debt, D/E, Gross NPA %, Net NPA % (if available), OCF (TTM = —). ROE and ROCE removed from table; shown in initial tiles from Screener ratios table (TTM/latest).
+1. Fetches yearly + optional TTM metrics from Screener.in (scraped; consolidated URL first, then company page if needed). TTM row is appended only when Screener exposes a TTM column on P&L. get_ttm_statements uses P&L TTM column when present else latest P&L column + latest BS. Parsing supports standard and bank/financial layouts (see screener_scraper.py, yearly_financials.py).
+2. Builds Financial Strength Scorecard (6 signals: revenue growth >10%, profit growth > revenue growth, ROE >15%, D/E <0.5, positive operating cash flow, margins stable/improving). OCF uses latest FY when TTM row has no CFO (Screener). Score 0–6, verdict, letter_grade. Not displayed in report (section removed).
+3. Builds 5-Year Financial Trend table (latest 5 years + TTM column only if TTM exists in yearly_metrics): Revenue, growth, PAT, EPS, margins, Debt, D/E, NPA % if present, OCF. ROE/ROCE in header tiles via build_key_metrics (TTM if present else latest FY).
 4. Generates 2–3 line trend insight via LLM from the 5-year table.
-5. Optionally generates good/bad balance sheet highlights from TTM statements via LLM.
+5. Optionally generates GOOD/BAD (green/red) financial flags via LLM from **5-year trend table + TTM P&L + latest balance sheet** (`balance_sheet_highlights_prompt` in prompts.py): forensic-style lens (revenue quality, margins, cash vs earnings, leverage, returns, accounting signals, working capital); bullets must be data-grounded.
 
 DATA FLOW
 ----------
@@ -502,7 +501,7 @@ Outputs: yearly_metrics, qoq_highlights, financial_scorecard, five_year_trend, t
 
 SCORECARD RULES (financial_evaluation.build_financial_scorecard)
 -----------------------------------------------------------------
-Uses same fetched (Screener) values. ROE and Debt/Equity prefer TTM when available. Revenue/Profit growth from latest YoY. OCF TTM = N/A (Screener has no CF TTM). Rules: Revenue Growth YoY > 10%; Profit Growth > Revenue Growth; ROE > 15%; Debt/Equity < 0.5; OCF TTM positive; Margins stable or improving.
+Uses same fetched (Screener) values. ROE and Debt/Equity prefer TTM row when present, else latest FY. Revenue/Profit growth from latest YoY. Operating cash flow: latest FY (TTM P&L has no CFO on Screener). build_key_metrics: same TTM vs latest-FY preference for header KPI tiles.
 
 5-YEAR TABLE (financial_evaluation.build_five_year_trend_table)
 -----------------------------------------------------------------
@@ -512,4 +511,13 @@ CSS / REPORT
 -------------
 Scorecard CSS remains in src/report/styles.css but scorecard block is not rendered in template/PDF/frontend.
 .five-year-table, .five-year-unit, .trend-insight
+================================================================================
+
+BACKEND: Report job status (polling UI)
+---------------------------------------
+GET /api/reports/{report_id} while status is pending or running may include
+optional fields progress (0–100, monotonic) and stage (short string). The report
+runner updates these from LangGraph stream_mode="updates" node completions
+(backend/reports.py, backend/job_store.set_progress). Completed responses omit
+progress/stage; the frontend falls back to a time-based heuristic if absent.
 ================================================================================

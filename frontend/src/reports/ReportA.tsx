@@ -218,6 +218,7 @@ export function ReportA({ report }: ReportAProps) {
   }, [report.symbol, report.exchange])
 
   const displayQuote = liveQuote ?? sq
+  const heroMeta = [report.exchange, report.sector].filter(Boolean).join(' · ')
   const keyMetrics = report.keyMetrics
   const kpis =
     keyMetrics && Object.keys(keyMetrics).length > 0
@@ -237,35 +238,39 @@ export function ReportA({ report }: ReportAProps) {
 
   return (
     <div style={{ maxWidth: 1200, margin: '0 auto', padding: '2rem', fontFamily: 'var(--font)' }}>
-      <header style={{ marginBottom: '2rem', borderBottom: '1px solid var(--border)', paddingBottom: '1.5rem' }}>
-        <div style={{ fontSize: '0.875rem', color: 'var(--textMuted)' }}>{report.exchange} · {report.sector}</div>
-        <h1 style={{ fontSize: '1.75rem', fontWeight: 700, margin: '0.25rem 0', color: 'var(--text)', display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: '0.5rem' }}>
-          {report.companyName}
-          {displayQuote?.currentPrice != null && (
-            <>
-              <span style={{ fontWeight: 600, color: 'var(--text)', marginLeft: '0.35rem' }}>
-                ₹ {displayQuote.currentPrice.toLocaleString('en-IN')}
+      <header className="report-hero">
+        <div className="report-hero-text">
+          <div className="report-hero-title-row">
+            <h1 className="report-hero-title">{report.companyName?.trim() || report.symbol}</h1>
+            {report.fromCache ? (
+              <span
+                className="report-cache-badge"
+                title="This report was loaded from a recent saved copy (24h freshness) instead of re-running full research."
+              >
+                Saved report
               </span>
-              {displayQuote?.priceChangePct && (
+            ) : null}
+          </div>
+          {displayQuote?.currentPrice != null && (
+            <p className="report-hero-quote-line" aria-label="Last traded price">
+              <span className="report-hero-price">₹{displayQuote.currentPrice.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+              {displayQuote.priceChangePct ? (
                 <span
-                  style={{
-                    fontSize: '0.9em',
-                    fontWeight: 600,
-                    marginLeft: '0.25rem',
-                    color: displayQuote.priceChangePct.startsWith('-') ? 'var(--red)' : 'var(--green)',
-                  }}
+                  className={
+                    displayQuote.priceChangePct.trim().startsWith('-')
+                      ? 'report-hero-change report-hero-change--down'
+                      : 'report-hero-change report-hero-change--up'
+                  }
                 >
                   {displayQuote.priceChangePct}
                 </span>
-              )}
-            </>
+              ) : null}
+              {displayQuote.lastPriceUpdated ? (
+                <span className="report-hero-updated"> · {displayQuote.lastPriceUpdated}</span>
+              ) : null}
+            </p>
           )}
-        </h1>
-        <div style={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: '0.5rem' }}>
-          <span style={{ fontSize: '0.9rem', color: 'var(--accent)' }}>{report.symbol}</span>
-          {displayQuote?.lastPriceUpdated && (
-            <span style={{ fontSize: '0.85rem', color: 'var(--textMuted)' }}> · {displayQuote.lastPriceUpdated}</span>
-          )}
+          {heroMeta ? <p className="report-hero-meta">{heroMeta}</p> : null}
         </div>
       </header>
 

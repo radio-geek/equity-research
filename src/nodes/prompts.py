@@ -346,15 +346,17 @@ def company_overview_structured_prompt(
 
 def management_prompt(company_name: str, symbol: str, meta: dict, shareholding: list) -> tuple[str, str]:
     system = (
-        "Role: You are an equity research analyst preparing the Management & Governance section of a detailed stock research report.\n\n"
+        "Role: You are an equity research analyst preparing the **Management & board** section of a detailed stock research report.\n\n"
 
         "Objective:\n"
-        "Use the provided materials (ARs, concalls, presentations, announcements) and web search to produce structured, objective, data-driven output that helps investors assess management quality and governance.\n\n"
+        "Use web search to produce structured, objective output so investors can assess **management and the board** "
+        "(track record, credibility, alignment, composition). Do **not** cover related party transactions (RPT) or "
+        "auditor-style governance red flags here — those are analyzed separately in the Governance & auditor review section.\n\n"
 
         "Web search (mandatory):\n"
         "You MUST use the web search tool. Do not rely on training knowledge for company-specific facts.\n"
-        "Search for: promoter background and history; board composition and director credentials; "
-        "related party transactions (RPT) from annual reports or BSE/NSE filings; shareholding pledges. "
+        "Search for: promoter background and history; key executives; board composition and director credentials; "
+        "notable management/board changes; shareholding pledges (if material to management credibility). "
         "Base the output on search results.\n\n"
 
         "Output format: Return ONLY a single JSON object (no markdown, no code fences, no preamble). "
@@ -365,20 +367,24 @@ def management_prompt(company_name: str, symbol: str, meta: dict, shareholding: 
         "\"description\" (string, 1–3 sentences: background, expertise, tenure, other roles, reputation). "
         "Include promoters and board members; keep list focused (typically 5–12 people).\n\n"
 
-        "2. \"rpt_and_gaps\" (string): Short Markdown paragraph(s) covering: (a) Related party transactions summary (material RPTs, arm's length, any concerns); "
-        "(b) Gaps & assumptions if you had to infer anything or lacked data. If nothing to add, use empty string.\n\n"
+        "2. \"management_narrative\" (string): Short Markdown paragraph(s) on **management and board only**: "
+        "e.g. leadership track record, capital allocation commentary if tied to management, board independence/skills, "
+        "succession or key-person risks, pledge/overhang context if relevant. "
+        "Include brief gaps or assumptions where data was thin. "
+        "**Do not** discuss RPTs, auditor remarks, or CARO items — leave those out entirely. "
+        "If nothing to add beyond the table, use an empty string.\n\n"
 
         "Example shape:\n"
         '{"people": [{"name": "...", "designation": "...", "description": "..."}], '
-        '"rpt_and_gaps": "..."}\n\n'
+        '"management_narrative": "..."}\n\n'
     ) + _reference_date_context() + _WEB_SEARCH_INSTRUCTION
 
     user = (
         f"Company: {company_name} (symbol: {symbol}).\n\n"
         f"Meta (company/financial context): {_serialize(meta)}\n\n"
         f"Shareholding pattern (quarterly): {_serialize(shareholding)}\n\n"
-        "Using the above and mandatory web search: return the single JSON object with people and rpt_and_gaps. "
-        "Be objective and data-driven."
+        "Using the above and mandatory web search: return the single JSON object with people and management_narrative. "
+        "Be objective and data-driven. Omit RPT and auditor/governance forensic topics."
     )
     return system, user
 
@@ -395,27 +401,88 @@ def balance_sheet_highlights_prompt(
     period_label: str,
     income_statement_text: str,
     balance_sheet_text: str,
+    five_year_trend_text: str = "",
 ) -> tuple[str, str]:
-    """Prompt for good/bad highlights from TTM income statement and latest balance sheet."""
-    system = """You are an equity research analyst. You will be given TTM (trailing twelve months) income statement and the latest balance sheet (values in Crores where applicable).
+    """Prompt for good/bad (green/red) highlights from 5-year trend + TTM P&L + latest balance sheet."""
+    system = (
+        "You are a senior equity research analyst with expertise in forensic accounting and financial statement analysis.\n\n"
+        "You will receive:\n"
+        "- A multi-year financial trend table (when available): revenue, growth, PAT, margins, debt, D/E, cash flow, etc.\n"
+        "- TTM (trailing twelve months) income statement and the latest balance sheet (values in ₹ Crores where applicable).\n\n"
+        "Your task: Identify **green flags** (GOOD) and **red flags** (BAD) grounded in these numbers — trends, accounting quality, "
+        "and balance sheet strength. Do not invent figures; only infer what the data supports. If a line item is missing, "
+        "do not fabricate it; skip that angle or say data is insufficient.\n\n"
+        "Follow this structured lens (use what the data allows):\n\n"
+        "-----------------------------------\n"
+        "1. REVENUE & GROWTH QUALITY\n"
+        "-----------------------------------\n"
+        "- Revenue growth consistency (smooth, volatile, cyclical) from the trend table.\n"
+        "- Mismatch between revenue growth and working-capital build (receivables, inventory) when visible on the balance sheet.\n"
+        "- Green: consistent growth with stable or improving working-capital ratios vs sales.\n"
+        "- Red: revenue up but receivables/inventory up disproportionately (channel stuffing / aggressive recognition risk).\n\n"
+        "-----------------------------------\n"
+        "2. PROFITABILITY & MARGINS\n"
+        "-----------------------------------\n"
+        "- Trends in gross margin (if derivable), EBITDA margin, net profit margin from trend + TTM.\n"
+        "- Operating leverage vs margin compression.\n"
+        "- Red: rising revenue but falling margins; sudden unexplained margin spikes.\n"
+        "- Green: stable or improving margins with scale.\n\n"
+        "-----------------------------------\n"
+        "3. CASH FLOW PROXY (without relying on a full CF statement)\n"
+        "-----------------------------------\n"
+        "- Compare PAT trend vs operating cash flow years in the table; note TTM OCF if shown.\n"
+        "- Infer whether profits appear to convert to cash using working-capital lines (receivables, inventory, payables) on the BS.\n"
+        "- Red: profits rising but OCF weak/negative or working capital absorbing cash; stretched receivable/inventory days implied by balances.\n"
+        "- Green: OCF supportive of earnings; sensible working capital.\n\n"
+        "-----------------------------------\n"
+        "4. BALANCE SHEET STRENGTH\n"
+        "-----------------------------------\n"
+        "- Debt levels and trend; Debt/Equity; short-term vs long-term borrowings when split is visible.\n"
+        "- Whether growth looks funded by internal accruals vs leverage.\n"
+        "- Red: rising debt with weak profitability; high short-term debt funding long-cycle assets (if visible).\n"
+        "- Green: deleveraging or prudent leverage.\n\n"
+        "-----------------------------------\n"
+        "5. RETURN RATIOS (when inferable from provided data)\n"
+        "-----------------------------------\n"
+        "- Approximate ROE (PAT / net worth) and ROCE if equity, debt, and EBIT/PAT allow — only if computable from the statements.\n"
+        "- Red: falling returns despite revenue growth.\n"
+        "- Green: improving capital efficiency.\n\n"
+        "-----------------------------------\n"
+        "6. ACCOUNTING & GOVERNANCE SIGNALS (from statements only)\n"
+        "-----------------------------------\n"
+        "- Other income spikes; large CWIP or intangibles build-up; share capital / reserves moves suggesting dilution; contingent liabilities.\n"
+        "- Red: profit quality driven by non-operating income; heavy CWIP with weak revenue contribution; frequent dilution (if visible).\n\n"
+        "-----------------------------------\n"
+        "7. WORKING CAPITAL ANALYSIS\n"
+        "-----------------------------------\n"
+        "- Trends in receivables, inventory, payables vs sales/COGS proxies when line items exist.\n"
+        "- Red: working capital to sales worsening; deteriorating cash conversion.\n"
+        "- Green: improving or stable cash conversion.\n\n"
+        "OUTPUT RULES\n"
+        "- List 3–6 **specific** GOOD points and 3–6 **specific** BAD points. Each bullet must reference concrete signals "
+        "(e.g. metric, direction, period or ‘TTM’ vs prior years). Avoid generic filler.\n"
+        "- Balance sheet-only commentary is not enough: tie GOOD/BAD to the trend table and/or TTM P&L where relevant.\n"
+        "- Use exactly the section headers and bullet format below.\n\n"
+        "GOOD:\n"
+        "- point one\n"
+        "- point two\n\n"
+        "BAD:\n"
+        "- point one\n"
+        "- point two"
+    ) + _reference_date_context()
 
-Your task: List 3–6 short, specific GOOD points and 3–6 short, specific BAD (or concerning) points from the balance sheet. You may use the TTM income statement for context (e.g. profitability vs debt). Focus on the balance sheet: liquidity, leverage, asset quality, working capital, contingent liabilities, and any red or green flags.
-
-Output format exactly as below. Use only "GOOD:" and "BAD:" as section headers. Each point must be one line starting with "- ".
-
-GOOD:
-- point one
-- point two
-
-BAD:
-- point one
-- point two""" + _reference_date_context()
-
+    trend_block = (
+        five_year_trend_text.strip()
+        if five_year_trend_text and five_year_trend_text.strip()
+        else "(5-year trend table not available — rely on TTM P&L and balance sheet only.)"
+    )
     user = (
         f"Company: {company_name} (symbol: {symbol}). Period: {period_label}.\n\n"
-        "TTM Income statement (Crores):\n" + (income_statement_text or "(not available)") + "\n\n"
-        "Balance sheet (Crores):\n" + (balance_sheet_text or "(not available)") + "\n\n"
-        "List GOOD and BAD points from the balance sheet in the exact format requested."
+        "5-YEAR FINANCIAL TREND (use for growth, margin, debt, and OCF history):\n"
+        f"{trend_block}\n\n"
+        "TTM Income statement (₹ Crores):\n" + (income_statement_text or "(not available)") + "\n\n"
+        "Latest Balance sheet (₹ Crores):\n" + (balance_sheet_text or "(not available)") + "\n\n"
+        "List GOOD and BAD points in the exact format requested."
     )
     return system, user
 

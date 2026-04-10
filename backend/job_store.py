@@ -33,6 +33,25 @@ def set_running(store: dict[str, Any], report_id: str) -> None:
     with _lock(store):
         if report_id in _jobs(store):
             _jobs(store)[report_id]["status"] = _STATUS_RUNNING
+            _jobs(store)[report_id]["progress"] = 5
+            _jobs(store)[report_id]["stage"] = "Starting research job…"
+
+
+def set_progress(
+    store: dict[str, Any], report_id: str, progress: int, stage: str | None = None
+) -> None:
+    """Best-effort monotonic progress 0–100 for polling UI; optional short stage label."""
+    with _lock(store):
+        job = _jobs(store).get(report_id)
+        if job is None:
+            return
+        p = max(0, min(100, int(progress)))
+        prev = int(job.get("progress", 0))
+        if p < prev:
+            return
+        job["progress"] = p
+        if stage is not None:
+            job["stage"] = stage
 
 
 def set_completed(store: dict[str, Any], report_id: str, report_path: str) -> None:

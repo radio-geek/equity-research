@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import AliasChoices, BaseModel, Field, model_validator
 
 
 # --- Company overview ---
@@ -98,9 +98,13 @@ class ManagementStructured(BaseModel):
         default_factory=list,
         description="Deprecated; governance analysis moved to auditor_flags node",
     )
-    rpt_and_gaps: str = Field(
-        "",
-        description="Related party transactions summary and gaps/assumptions",
+    management_narrative: str = Field(
+        default="",
+        validation_alias=AliasChoices("management_narrative", "rpt_and_gaps"),
+        description=(
+            "Short markdown: management track record, strategy, board effectiveness; "
+            "data gaps. Do not include related party transactions (RPT)."
+        ),
     )
 
 

@@ -227,9 +227,14 @@ export interface ReportView {
   screenerQuote?: { currentPrice?: number; priceChangePct?: string; marketCap?: string; stockPe?: number; lastPriceUpdated?: string }
   /** Key metrics for header strip: pe, market_cap, roce, roe, debt_equity, pat_margin, ebitda_margin */
   keyMetrics?: Record<string, string>
+  /** True when this payload was returned from the server cache without re-running the graph */
+  fromCache?: boolean
 }
 
-export function mapReportPayloadToView(payload: ReportPayload | null | undefined): ReportView {
+export function mapReportPayloadToView(
+  payload: ReportPayload | null | undefined,
+  options?: { fromCache?: boolean }
+): ReportView {
   const empty: ReportView = {
     companyName: '',
     symbol: '',
@@ -335,6 +340,7 @@ export function mapReportPayloadToView(payload: ReportPayload | null | undefined
       }
     })(),
     keyMetrics: payload.key_metrics ?? undefined,
+    fromCache: options?.fromCache === true ? true : undefined,
   }
 }
 
@@ -343,6 +349,10 @@ export interface ReportStatus {
   report?: ReportPayload
   from_cache?: boolean
   error?: string
+  /** 0–100 from backend while job is pending/running; omitted when unknown or completed */
+  progress?: number
+  /** Short status line from backend (optional) */
+  stage?: string
 }
 
 export async function getReportStatus(reportId: string): Promise<ReportStatus> {

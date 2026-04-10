@@ -35,6 +35,11 @@ def _ttm_row(metrics: list[dict]) -> dict | None:
     return None
 
 
+def _kpi_source_row(metrics: list[dict]) -> dict | None:
+    """Row for header KPIs: TTM when Screener exposes it, else latest completed year."""
+    return _ttm_row(metrics) or _latest_yearly(metrics)
+
+
 def _prev_yearly(metrics: list[dict], after_label: str | None) -> dict | None:
     """Year row before the given period_label (for YoY or margin comparison)."""
     if not after_label or not metrics:
@@ -62,7 +67,7 @@ def build_financial_scorecard(
     2. Profit Growth YoY > Revenue Growth
     3. ROE > 15%
     4. Debt/Equity < 0.5
-    5. Operating Cash Flow TTM positive
+    5. Operating cash flow positive (latest full year; Screener has no CF TTM)
     6. Margins stable or improving YoY
     """
     total = 6
@@ -92,7 +97,10 @@ def build_financial_scorecard(
 
     rev_yoy = _n(latest.get("revenue_yoy_pct")) if latest else None
     pat_yoy = _n(latest.get("pat_yoy_pct")) if latest else None
-    cfo_ttm = _n(ttm.get("cfo_cr")) if ttm else _n(latest.get("cfo_cr")) if latest else None
+    # Screener TTM P&L row has no operating cash flow; fall back to latest FY
+    cfo_ttm = _n(ttm.get("cfo_cr")) if ttm else None
+    if cfo_ttm is None and latest:
+        cfo_ttm = _n(latest.get("cfo_cr"))
 
     # 1. Revenue Growth YoY > 10%
     rev_ok = rev_yoy is not None and rev_yoy > 10
@@ -142,7 +150,7 @@ def build_financial_scorecard(
         "signal": "Balance sheet strength",
     })
 
-    # 5. Operating Cash Flow TTM positive
+    # 5. Operating cash flow positive (Screener TTM P&L has no CFO; cfo_ttm uses latest FY when no TTM row)
     cfo_ok = cfo_ttm is not None and cfo_ttm > 0
     if cfo_ok:
         passed += 1
@@ -346,10 +354,38 @@ def build_five_year_trend_table(yearly_metrics: list[dict[str, Any]]) -> dict[st
     return {"headers": headers, "rows": rows}
 
 
+def format_five_year_trend_as_text(five_year_table: dict[str, Any]) -> str:
+    """Render the 5-year financial trend table as plain text for LLM prompts (green/red flags)."""
+    headers = five_year_table.get("headers") or []
+    rows = five_year_table.get("rows") or []
+    if not headers or not rows:
+        return ""
+    n = len(headers)
+    lines: list[str] = []
+    lines.append("Metric | " + " | ".join(str(h) for h in headers))
+    sep = "-" * min(8 + sum(len(str(h)) for h in headers) + 3 * max(n - 1, 0), 140)
+    lines.append(sep)
+    for row in rows:
+        metric = (row.get("metric") or "").strip()
+        unit = (row.get("unit") or "").strip()
+        label = f"{metric} ({unit})" if unit else metric
+        cells = list(row.get("cells") or [])
+        if len(cells) < n:
+            cells.extend(["—"] * (n - len(cells)))
+        elif len(cells) > n:
+            cells = cells[:n]
+        lines.append(label + " | " + " | ".join(str(c) for c in cells))
+    return "\n".join(lines)
+
+
 def build_key_metrics(yearly_metrics: list[dict[str, Any]]) -> dict[str, str]:
-    """Build key TTM metrics for report header from yearly_metrics (TTM row). All from same scraped data."""
-    ttm = _ttm_row(yearly_metrics or [])
-    if not ttm:
+    """Build key metrics for report header from yearly_metrics.
+
+    Prefers the TTM row when present (Screener TTM column). If TTM is not in the scrape yet,
+    uses the latest completed year so tiles are not blank.
+    """
+    row = _kpi_source_row(yearly_metrics or [])
+    if not row:
         return {}
 
     def _fmt_num(val: Any) -> str:
@@ -374,25 +410,25 @@ def build_key_metrics(yearly_metrics: list[dict[str, Any]]) -> dict[str, str]:
         except (TypeError, ValueError):
             return "—"
 
-    # PAT margin % and EBITDA margin %: use TTM table values (from Screener OPM % and computed PAT margin)
-    pat_margin_pct = _n(ttm.get("pat_margin_pct"))
+    # PAT margin % and EBITDA margin %: from row fields (TTM or latest FY)
+    pat_margin_pct = _n(row.get("pat_margin_pct"))
     if pat_margin_pct is None:
-        rev = _n(ttm.get("revenue_cr"))
-        pat = _n(ttm.get("pat_cr"))
+        rev = _n(row.get("revenue_cr"))
+        pat = _n(row.get("pat_cr"))
         pat_margin_pct = (100 * pat / rev) if rev and rev != 0 and pat is not None else None
-    ebitda_margin_pct = _n(ttm.get("ebitda_margin_pct"))
+    ebitda_margin_pct = _n(row.get("ebitda_margin_pct"))
     if ebitda_margin_pct is None:
-        rev = _n(ttm.get("revenue_cr"))
-        ebitda = _n(ttm.get("ebitda_cr"))
+        rev = _n(row.get("revenue_cr"))
+        ebitda = _n(row.get("ebitda_cr"))
         ebitda_margin_pct = (100 * ebitda / rev) if rev and rev != 0 and ebitda is not None else None
     return {
-        "revenue_cr": _fmt_num(ttm.get("revenue_cr")),
-        "pat_cr": _fmt_num(ttm.get("pat_cr")),
-        "roe": _fmt_pct(ttm.get("roe")),
-        "roce": _fmt_pct(ttm.get("roce")),
-        "debt_equity": _fmt_num(ttm.get("debt_equity")),
-        "eps": _fmt_num(ttm.get("eps")),
-        "debt_cr": _fmt_num(ttm.get("debt_cr")),
+        "revenue_cr": _fmt_num(row.get("revenue_cr")),
+        "pat_cr": _fmt_num(row.get("pat_cr")),
+        "roe": _fmt_pct(row.get("roe")),
+        "roce": _fmt_pct(row.get("roce")),
+        "debt_equity": _fmt_num(row.get("debt_equity")),
+        "eps": _fmt_num(row.get("eps")),
+        "debt_cr": _fmt_num(row.get("debt_cr")),
         "pat_margin": _fmt_pct(pat_margin_pct),
         "ebitda_margin": _fmt_pct(ebitda_margin_pct),
     }
