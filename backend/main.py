@@ -254,6 +254,19 @@ async def api_market_indices():
     return {"indices": data}
 
 
+@app.get("/api/quote/{symbol}")
+async def api_quote(symbol: str, exchange: str = "NSE"):
+    """Return live stock quote from Screener for the given symbol."""
+    from src.data.screener_scraper import fetch_company_quote
+    import asyncio
+    loop = asyncio.get_event_loop()
+    try:
+        quote = await loop.run_in_executor(None, fetch_company_quote, symbol.upper())
+        return {"symbol": symbol.upper(), "exchange": exchange.upper(), "quote": quote}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Quote fetch failed: {e}")
+
+
 @app.get("/api/symbols/suggest")
 async def api_symbols_suggest(q: str = ""):
     """Return list of { symbol, name } for typeahead; error if NSE lookup failed."""
