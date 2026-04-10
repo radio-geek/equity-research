@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import sys
 import time
-import uuid
 from pathlib import Path
 
 # Ensure repo root is on path
@@ -18,7 +17,21 @@ from backend.job_store import (
     get as job_get,
     set_completed_with_payload as job_set_completed_with_payload,
     set_failed as job_set_failed,
+    set_progress as job_set_progress,
     set_running as job_set_running,
+)
+
+# Parallel research node names (must match src/graph.py fan-out).
+_RESEARCH_NODES = frozenset(
+    {
+        "company_overview",
+        "management",
+        "financial_risk",
+        "auditor_flags",
+        "concall_evaluator",
+        "sectoral",
+        "qoq_financials",
+    }
 )
 
 
@@ -50,6 +63,7 @@ def _run_report_sync(report_id: str, symbol: str, exchange: str, store: dict, us
 
         from src.graph import build_graph
 
+        job_set_progress(store, report_id, 11, "Running multi-agent analysis…")
         graph = build_graph()
         config = {
             "configurable": {"thread_id": report_id},
@@ -58,8 +72,31 @@ def _run_report_sync(report_id: str, symbol: str, exchange: str, store: dict, us
             "run_name": f"equity-research-{symbol}-{exchange}",
         }
         initial_state = {"symbol": symbol, "exchange": exchange, "messages": []}
-        result = graph.invoke(initial_state, config=config)
-        values = result if isinstance(result, dict) else getattr(result, "values", result)
+
+        done_research: set[str] = set()
+        for chunk in graph.stream(initial_state, config=config, stream_mode="updates"):
+            if not isinstance(chunk, dict):
+                continue
+            for node_name in chunk:
+                if node_name == "resolve_company":
+                    job_set_progress(store, report_id, 16, "Company and quote resolved…")
+                elif node_name in _RESEARCH_NODES:
+                    done_research.add(node_name)
+                    n = len(done_research)
+                    pct = 16 + int((n / 7) * 58)
+                    job_set_progress(
+                        store,
+                        report_id,
+                        pct,
+                        f"Research in progress ({n}/7 workstreams)",
+                    )
+                elif node_name == "aggregate":
+                    job_set_progress(store, report_id, 82, "Aggregating findings…")
+                elif node_name == "report_generator":
+                    job_set_progress(store, report_id, 93, "Building report…")
+
+        snap = graph.get_state(config)
+        values = snap.values if snap is not None else {}
         report_payload = values.get("report_payload") if isinstance(values, dict) else None
         if isinstance(report_payload, dict):
             generation_ms = int((time.monotonic() - t0) * 1000)
@@ -82,7 +119,7 @@ async def start_report(report_id: str, symbol: str, exchange: str, store: dict, 
 
 
 def get_report_status(store: dict, report_id: str) -> dict | None:
-    """Return { status, report?, from_cache?, error? } or None if unknown."""
+    """Return { status, report?, from_cache?, error?, progress?, stage? } or None if unknown."""
     job = job_get(store, report_id)
     if job is None:
         return None
@@ -90,6 +127,12 @@ def get_report_status(store: dict, report_id: str) -> dict | None:
         "status": job["status"],
         "error": job.get("error"),
     }
+    if job["status"] in ("pending", "running"):
+        if "progress" in job:
+            out["progress"] = job["progress"]
+        stg = job.get("stage")
+        if stg:
+            out["stage"] = stg
     if job.get("status") == "completed" and "report_payload" in job:
         out["report"] = job["report_payload"]
         if job.get("from_cache"):

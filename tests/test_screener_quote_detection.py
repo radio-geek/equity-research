@@ -1,10 +1,11 @@
 """Test Screener scraper: quote detection and table detection (standard vs bank structure)."""
 from __future__ import annotations
 
-import pytest
 from bs4 import BeautifulSoup
 
-from src.data.screener_scraper import _find_tables_by_content, _page_has_quote_data
+import pandas as pd
+
+from src.data.screener_scraper import _find_tables_by_content, _page_has_quote_data, _tables_complete
 
 # Quote block is first 3500 chars; these snippets simulate top-of-page content.
 
@@ -100,6 +101,21 @@ def test_find_tables_standard_pl_detected() -> None:
     assert "profit_loss" in located
 
 
+def test_find_tables_standard_pl_detected_without_ttm_column() -> None:
+    """P&L is detected when TTM column is absent (e.g. before TTM is published on Screener)."""
+    html = """
+    <table>
+      <tr><th></th><th>Mar 2023</th><th>Jun 2023</th><th>Mar 2024</th></tr>
+      <tr><td>Sales +</td><td>1000</td><td>1050</td><td>1100</td></tr>
+      <tr><td>Operating Profit</td><td>100</td><td>110</td><td>120</td></tr>
+      <tr><td>Net Profit +</td><td>80</td><td>88</td><td>95</td></tr>
+    </table>
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    located = _find_tables_by_content(soup)
+    assert "profit_loss" in located
+
+
 def test_find_tables_bank_pl_detected() -> None:
     """Bank P&L (Revenue +, Financing Profit, Profit before tax, Net Profit +, TTM) is detected."""
     html = """
@@ -111,6 +127,22 @@ def test_find_tables_bank_pl_detected() -> None:
       <tr><td>Profit before tax</td><td>61498</td><td>76569</td><td>100043</td></tr>
       <tr><td>Net Profit +</td><td>46149</td><td>65446</td><td>77430</td></tr>
       <tr><td>EPS in Rs</td><td>41.22</td><td>42.16</td><td>48.54</td></tr>
+    </table>
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    located = _find_tables_by_content(soup)
+    assert "profit_loss" in located
+
+
+def test_find_tables_bank_pl_detected_without_ttm_column() -> None:
+    """Bank-style P&L without a TTM column is still detected."""
+    html = """
+    <table>
+      <tr><th></th><th>Mar 2024</th><th>Mar 2025</th></tr>
+      <tr><td>Revenue +</td><td>170754</td><td>283649</td></tr>
+      <tr><td>Financing Profit</td><td>29932</td><td>-44685</td></tr>
+      <tr><td>Profit before tax</td><td>61498</td><td>76569</td></tr>
+      <tr><td>Net Profit +</td><td>46149</td><td>65446</td></tr>
     </table>
     """
     soup = BeautifulSoup(html, "html.parser")
@@ -133,3 +165,17 @@ def test_find_tables_bank_balance_sheet_detected() -> None:
     soup = BeautifulSoup(html, "html.parser")
     located = _find_tables_by_content(soup)
     assert "balance_sheet" in located
+
+
+def test_tables_complete_all_four() -> None:
+    """_tables_complete requires every table key with at least one period column."""
+    one_col = pd.DataFrame({"Mar 2025": [1.0]}, index=["Sales"])
+    full = {
+        "profit_loss": one_col,
+        "balance_sheet": one_col,
+        "cash_flow": one_col,
+        "ratios": one_col,
+    }
+    assert _tables_complete(full) is True
+    assert _tables_complete({**full, "profit_loss": None}) is False
+    assert _tables_complete({**full, "ratios": pd.DataFrame()}) is False

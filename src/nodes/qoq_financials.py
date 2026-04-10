@@ -11,6 +11,7 @@ from src.report.financial_evaluation import (
     build_financial_scorecard,
     build_five_year_trend_table,
     build_trend_insight_summary,
+    format_five_year_trend_as_text,
 )
 from src.state import ResearchState
 
@@ -52,8 +53,8 @@ def _parse_highlights(response: str) -> dict[str, list[str]]:
 def qoq_financials(state: ResearchState) -> dict[str, Any]:
     """Fetch yearly + TTM metrics; build scorecard, 5-year trend, highlights, trend insight.
 
-    Yearly/TTM data comes from Screener.in; if consolidated page has no quote (price/market cap
-    NA or missing), the data layer falls back to https://www.screener.in/company/{symbol}/.
+    Yearly/TTM data comes from Screener.in: consolidated URL is tried first, then the main
+    company page if the consolidated request fails or tables are incomplete.
     """
     symbol = (state.get("symbol") or "").strip().upper()
     exchange = (state.get("exchange") or "NSE").strip().upper()
@@ -92,6 +93,8 @@ def qoq_financials(state: ResearchState) -> dict[str, Any]:
         logger.exception("qoq_financials: build_five_year_trend_table failed: %s", e)
         five_year_trend = {"headers": [], "rows": []}
 
+    five_year_trend_text = format_five_year_trend_as_text(five_year_trend)
+
     trend_insight = build_trend_insight_summary(five_year_trend, company_name)
 
     highlights = {"good": [], "bad": []}
@@ -109,6 +112,7 @@ def qoq_financials(state: ResearchState) -> dict[str, Any]:
             statements.get("period_label", "TTM"),
             statements.get("income_statement_text", ""),
             statements.get("balance_sheet_text", ""),
+            five_year_trend_text,
         )
         try:
             response = invoke_llm(system, user, use_web_search=False)

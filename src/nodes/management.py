@@ -34,9 +34,11 @@ def management(state: ResearchState) -> dict[str, Any]:
             {"name": p.name, "designation": p.designation, "description": p.description}
             for p in parsed.people
         ]
-        management_research = (parsed.rpt_and_gaps or "").strip()
+        management_research = (parsed.management_narrative or "").strip()
         if not management_research and management_people:
-            management_research = "Related party transactions and gaps: see search results above where available."
+            management_research = (
+                "Further qualitative commentary was thin from search; rely on the Promoter & Board table above."
+            )
         logger.info(
             "management: parsed structured output, people=%d",
             len(management_people),

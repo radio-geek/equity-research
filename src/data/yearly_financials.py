@@ -58,7 +58,7 @@ def fetch_yearly_financials(
 ) -> list[dict[str, Any]]:
     """Fetch yearly financials from Screener.in (scraped). Chronological order (oldest first), then TTM last.
 
-    URL is built dynamically: https://www.screener.in/company/{symbol}/consolidated/
+    Data is scraped from Screener: consolidated page first, then the main company page if needed.
 
     Each dict: period_label (FY21, ..., TTM), revenue_cr, ebitda_cr, pat_cr, cfo_cr, debt_cr, debt_equity,
     roe, roce, eps, and *_yoy_pct (None for first year and for TTM).
@@ -276,10 +276,11 @@ def _dataframe_column_to_text(df: Any, col: Any, in_crores: bool = True) -> str:
 
 
 def get_ttm_statements(symbol: str, exchange: str) -> dict[str, Any]:
-    """Return TTM income statement and latest balance sheet as text for LLM prompt.
+    """Return income statement and latest balance sheet as text for LLM prompt.
 
-    Uses Screener.in consolidated page (URL built from symbol). P&L TTM column + BS latest column.
-    Keys: period_label ('TTM'), income_statement_text, balance_sheet_text.
+    Uses Screener scrape: P&L **TTM** column when present; otherwise the **latest** P&L period
+    column (same table as yearly flow). Balance sheet uses latest column. Keys: period_label
+    ('TTM' or FY label e.g. 'FY26'), income_statement_text, balance_sheet_text.
     """
     symbol = (symbol or "").strip().upper()
     if not symbol:
@@ -298,15 +299,20 @@ def get_ttm_statements(symbol: str, exchange: str) -> dict[str, Any]:
         return {}
 
     income_text = ""
+    period_label = "TTM"
     if "TTM" in pl.columns:
         income_text = _dataframe_column_to_text(pl, "TTM", in_crores=True)
+    else:
+        last_pl_col = list(pl.columns)[-1]
+        income_text = _dataframe_column_to_text(pl, last_pl_col, in_crores=True)
+        period_label = _screener_col_to_fy_label(str(last_pl_col))
 
     balance_text = ""
     if bs is not None and hasattr(bs, "columns") and len(bs.columns) > 0:
         balance_text = _dataframe_column_to_text(bs, bs.columns[-1], in_crores=True)
 
     return {
-        "period_label": "TTM",
+        "period_label": period_label,
         "income_statement_text": income_text,
         "balance_sheet_text": balance_text,
     }
