@@ -277,6 +277,8 @@ You can deploy **only the frontend** (static SPA) to [GitHub Pages](https://page
 
 Host the FastAPI backend on Render or another platform (see Render or your host’s docs for deploy steps). Set `FRONTEND_URL` on the backend to your GitHub Pages URL (e.g. `https://<user>.github.io/equity-research`).
 
+**PDF on Render:** Playwright’s default install location is under the build user’s home cache, which is **not** available at runtime, so PDF generation fails unless browsers are installed **inside the repo**. Set the Render **Build Command** to `bash scripts/render_build.sh` (this sets `PLAYWRIGHT_BROWSERS_PATH` to `.playwright-browsers/` in the project, runs `pip install`, then `playwright install chromium`). The backend sets `PLAYWRIGHT_BROWSERS_PATH` automatically when that directory exists. If Chromium still fails to launch, check build logs for `install --with-deps`; you can run `playwright install-deps chromium` in a Dockerfile-based deploy instead.
+
 ### 2. Repository secret
 
 In your GitHub repo: **Settings → Secrets and variables → Actions** → **New repository secret**:

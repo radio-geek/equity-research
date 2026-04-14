@@ -14,6 +14,13 @@ log = logging.getLogger(__name__)
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
+# Render (and similar): build-time `playwright install` defaults to ~/.cache, which is not
+# shipped to the runtime filesystem. Install browsers into ./.playwright-browsers (see
+# scripts/render_build.sh); when that directory exists, use it automatically.
+_pw_bundle = _REPO_ROOT / ".playwright-browsers"
+if _pw_bundle.is_dir():
+    os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(_pw_bundle.resolve()))
+
 
 def _markdown_to_html(text: str) -> str:
     """Convert Markdown to HTML for report/PDF. Uses 'tables' extension. Output is escaped by the library."""
