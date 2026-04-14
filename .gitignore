@@ -1,8 +1,6 @@
 .venv/
 .env
 
-# Playwright browsers when using scripts/render_build.sh (do not commit binaries)
-.playwright-browsers/
 .nse_cache/
 cache_data/
 reports/*.pdf
