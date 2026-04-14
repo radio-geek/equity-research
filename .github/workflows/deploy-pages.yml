@@ -34,6 +34,8 @@ jobs:
         env:
           VITE_API_URL: ${{ secrets.RENDER_API_URL }}
           VITE_BASE_PATH: /
+          VITE_UMAMI_URL: ${{ secrets.VITE_UMAMI_URL }}
+          VITE_UMAMI_WEBSITE_ID: ${{ secrets.VITE_UMAMI_WEBSITE_ID }}
         run: |
           cd frontend
           npm ci
