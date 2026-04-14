@@ -14,12 +14,28 @@ log = logging.getLogger(__name__)
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# Render (and similar): build-time `playwright install` defaults to ~/.cache, which is not
-# shipped to the runtime filesystem. Install browsers into ./.playwright-browsers (see
-# scripts/render_build.sh); when that directory exists, use it automatically.
-_pw_bundle = _REPO_ROOT / ".playwright-browsers"
-if _pw_bundle.is_dir():
-    os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(_pw_bundle.resolve()))
+
+def _playwright_bundle_dir_ready(bundle_root: Path) -> bool:
+    """True if a pre-bundled Playwright browser tree exists (non-empty chromium revision dir)."""
+    if not bundle_root.is_dir():
+        return False
+    try:
+        for child in bundle_root.iterdir():
+            if child.is_dir() and child.name.startswith("chromium"):
+                return True
+    except OSError:
+        return False
+    return False
+
+
+# Pre-bundled browsers (e.g. scripts/render_build.sh → ./playwright-browsers). Only set
+# PLAYWRIGHT_BROWSERS_PATH when the tree is actually present — an empty or gitignored
+# directory on the host would otherwise shadow the default cache and break launch.
+for _name in ("playwright-browsers", ".playwright-browsers"):
+    _pw_bundle = _REPO_ROOT / _name
+    if _playwright_bundle_dir_ready(_pw_bundle):
+        os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(_pw_bundle.resolve()))
+        break
 
 
 def _markdown_to_html(text: str) -> str:
@@ -635,5 +651,6 @@ def render_payload_to_pdf(payload: dict) -> bytes:
     if playwright_error is not None:
         raise RuntimeError(f"PDF generation failed: {playwright_error}") from playwright_error
     raise RuntimeError(
-        "PDF generation failed: Chromium not available. Run ./build.sh or playwright install chromium."
+        "PDF generation failed: Chromium not available. Run playwright install chromium locally, "
+        "./build.sh (Linux), or on Render use scripts/render_start.sh before the server starts."
     )

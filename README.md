@@ -277,7 +277,13 @@ You can deploy **only the frontend** (static SPA) to [GitHub Pages](https://page
 
 Host the FastAPI backend on Render or another platform (see Render or your host’s docs for deploy steps). Set `FRONTEND_URL` on the backend to your GitHub Pages URL (e.g. `https://<user>.github.io/equity-research`).
 
-**PDF on Render:** Playwright’s default install location is under the build user’s home cache, which is **not** available at runtime, so PDF generation fails unless browsers are installed **inside the repo**. Set the Render **Build Command** to `bash scripts/render_build.sh` (this sets `PLAYWRIGHT_BROWSERS_PATH` to `.playwright-browsers/` in the project, runs `pip install`, then `playwright install chromium`). The backend sets `PLAYWRIGHT_BROWSERS_PATH` automatically when that directory exists. If Chromium still fails to launch, check build logs for `install --with-deps`; you can run `playwright install-deps chromium` in a Dockerfile-based deploy instead.
+**PDF on Render:** Render’s runtime instance often **does not include** browser files produced during the build (for example paths listed in `.gitignore` can be omitted from the deploy slug, leaving an empty `PLAYWRIGHT_BROWSERS_PATH`). Use this setup:
+
+1. **Build Command:** `bash scripts/render_build.sh` (same as before: `pip install`, then `python -m playwright install` into `./playwright-browsers`; the script fails the build if Chromium is missing).
+2. **Start Command:** `bash scripts/render_start.sh` — before Uvicorn, runs `python -m playwright install chromium` on the **runtime** disk so the executable always exists (first boot may take ~30–60s; later boots are fast if the layer is cached).
+3. In the Render dashboard, **remove** `PLAYWRIGHT_BROWSERS_PATH` unless you know you need it — a stale value pointing at an empty folder breaks PDFs.
+
+`playwright-browsers/` is not gitignored so it can ship in the slug if your host includes it; `render_start.sh` still fixes the common case when it does not. For missing system libraries at launch, use a Dockerfile-based service or a Playwright base image.
 
 ### 2. Repository secret
 
