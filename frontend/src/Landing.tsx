@@ -32,7 +32,12 @@ export default function Landing() {
     const load = async () => {
       try {
         const data = await getMarketIndices()
-        if (!cancelled && data.length > 0) setIndices(data)
+        if (!cancelled && data.length > 0) {
+          setIndices((prev) => {
+            const liveMap = new Map(data.map((d: IndexTick) => [d.name, d]))
+            return prev.map((p) => liveMap.get(p.name) ?? p)
+          })
+        }
       } catch {
         /* keep static fallback */
       }
