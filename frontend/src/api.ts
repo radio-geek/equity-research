@@ -85,6 +85,9 @@ export async function createReport(symbol: string, exchange: string = 'NSE'): Pr
     body: JSON.stringify({ symbol, exchange }),
   })
   if (!res.ok) {
+    if (res.status === 429) {
+      throw new Error("You've reached your daily limit of 10 reports. Please try again tomorrow.")
+    }
     const err = await res.json().catch(() => ({}))
     throw new Error(err.detail ?? res.statusText)
   }
