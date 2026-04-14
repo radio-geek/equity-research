@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+  <rect width="32" height="32" rx="7" fill="#0D0D1A"/>
+  <!-- Uptrend line (stock-style sparkline) -->
+  <path
+    d="M5 23 L9.5 18.5 L14 19.5 L18.5 11 L23 13.5 L27 7"
+    stroke="#00F5D4"
+    stroke-width="2.25"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <!-- Mini candlesticks -->
+  <rect x="6" y="20" width="2.5" height="6" rx="0.5" fill="#22c55e"/>
+  <rect x="12.5" y="16" width="2.5" height="8" rx="0.5" fill="#22c55e"/>
+  <rect x="19" y="12" width="2.5" height="10" rx="0.5" fill="#FF3AF2" opacity="0.9"/>
+</svg>

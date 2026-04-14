@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Routes, Route, Link, useLocation } from 'react-router-dom'
+import { Routes, Route, Link, useLocation, useMatch } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext'
 import Header from './components/Header'
 import Landing from './Landing'
@@ -14,6 +14,24 @@ function AnalyticsTracker() {
   useEffect(() => {
     trackPageView(pathname)
   }, [pathname])
+  return null
+}
+
+/** Tab title: "Valyu" everywhere except report routes → "Valyu - SYMBOL". */
+function DocumentTitle() {
+  const reportMatch = useMatch('/:symbol/report')
+  useEffect(() => {
+    const raw = reportMatch?.params.symbol
+    if (raw) {
+      try {
+        document.title = `Valyu - ${decodeURIComponent(raw).toUpperCase()}`
+      } catch {
+        document.title = 'Valyu - Report'
+      }
+    } else {
+      document.title = 'Valyu'
+    }
+  }, [reportMatch?.params.symbol])
   return null
 }
 
@@ -76,6 +94,7 @@ export default function App() {
   return (
     <AuthProvider>
       <AnalyticsInit />
+      <DocumentTitle />
       <Header />
       <Routes>
         <Route path="/" element={<Landing />} />

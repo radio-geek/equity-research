@@ -29,9 +29,10 @@ This file is the **README for AI coding agents** working on the Equity Research 
   `PYTHONPATH=. python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000`  
   Use `python -m uvicorn` so the same interpreter (and `nse` package) is used.
 
-- **Frontend**:  
-  `cd frontend && npm install && npm run dev`  
+- **Frontend**:
+  `cd frontend && npm install && npm run dev`
   Dev server: `http://localhost:5173` (proxies API to backend).
+  Styling uses **Tailwind v3** (`tailwindcss` + `autoprefixer` in `postcss.config.js`), not `@tailwindcss/postcss` v4, so dev/build does not depend on `@tailwindcss/oxide` native binaries or Node 20+.
 
 - **CLI (research only)**:  
   `python run.py --symbol RELIANCE --exchange NSE`  
