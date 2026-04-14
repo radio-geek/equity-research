@@ -228,7 +228,7 @@ npm run dev
 Then open **http://localhost:5173**. Use the search bar to find a stock (NSE symbol or company name); select a suggestion to go to `/:symbol/report`. The report is generated in the background and shown when ready.
 
 - **Caching**: Reports are cached in the `reports` PostgreSQL table for 24 hours per symbol. If a cached report exists, it is served immediately without re-running the pipeline.
-- **PDF download**: On the report page, use “Download PDF” to get a styled PDF (1) Playwright headless Chromium—run `playwright install chromium` after pip install; (2) WeasyPrint—e.g. `brew install pango cairo` on macOS; (3) ReportLab fallback. For deployment, install Chromium for best PDF fidelity.
+- **PDF download**: On the report page, use “Download PDF” to get a styled PDF (1) Playwright headless Chromium—run `playwright install chromium` after pip install (on Apple Silicon, if launch still fails, try `playwright install --force chromium` so the arm64 bundle replaces an older x64 cache); (2) WeasyPrint—e.g. `brew install pango cairo` on macOS; (3) ReportLab fallback. For deployment, install Chromium for best PDF fidelity. Quick check from repo root: `PYTHONPATH=. python scripts/smoke_pdf_local.py` writes `/tmp/equity-research-smoke.pdf`.
 - **Feedback**: Thumbs up/down and an optional comment can be submitted; stored in the `feedback` PostgreSQL table. If logged in, feedback is linked to the user.
 - **Auth**: “Sign in with Google” button on the landing page. JWT stored in `localStorage`. Requires `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `JWT_SECRET` in `.env`.
 

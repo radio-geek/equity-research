@@ -15,25 +15,48 @@ log = logging.getLogger(__name__)
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
-def _playwright_bundle_dir_ready(bundle_root: Path) -> bool:
-    """True if a pre-bundled Playwright browser tree exists (non-empty chromium revision dir)."""
+def _chromium_bundle_usable(bundle_root: Path) -> bool:
+    """True if bundle_root contains a Playwright chromium/headless-shell binary (not just empty dirs)."""
     if not bundle_root.is_dir():
         return False
     try:
-        for child in bundle_root.iterdir():
-            if child.is_dir() and child.name.startswith("chromium"):
+        for rev in bundle_root.iterdir():
+            if not rev.is_dir() or not rev.name.startswith("chromium"):
+                continue
+            for f in rev.rglob("chrome-headless-shell"):
+                if f.is_file():
+                    return True
+            linux_full = rev / "chrome-linux" / "chrome"
+            if linux_full.is_file():
                 return True
+            for f in rev.rglob("Chromium"):
+                if f.is_file() and "chrome-mac" in str(f).replace("\\", "/"):
+                    return True
     except OSError:
         return False
     return False
 
 
+def _drop_unusable_playwright_browsers_path() -> None:
+    """If PLAYWRIGHT_BROWSERS_PATH is set but has no chromium binary, unset so Playwright uses default cache."""
+    raw = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+    if not raw:
+        return
+    root = Path(raw)
+    if not _chromium_bundle_usable(root):
+        log.warning(
+            "PLAYWRIGHT_BROWSERS_PATH=%s has no usable Chromium binary; ignoring so default browser path is used",
+            raw,
+        )
+        del os.environ["PLAYWRIGHT_BROWSERS_PATH"]
+
+
 # Pre-bundled browsers (e.g. scripts/render_build.sh → ./playwright-browsers). Only set
-# PLAYWRIGHT_BROWSERS_PATH when the tree is actually present — an empty or gitignored
-# directory on the host would otherwise shadow the default cache and break launch.
+# PLAYWRIGHT_BROWSERS_PATH when the tree actually contains a binary — an empty revision
+# folder (common on partial deploys) must not shadow the default cache.
 for _name in ("playwright-browsers", ".playwright-browsers"):
     _pw_bundle = _REPO_ROOT / _name
-    if _playwright_bundle_dir_ready(_pw_bundle):
+    if _chromium_bundle_usable(_pw_bundle):
         os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(_pw_bundle.resolve()))
         break
 
@@ -587,6 +610,7 @@ def _pdf_playwright(payload: dict) -> bytes | None:
         from playwright.sync_api import sync_playwright
     except ImportError:
         return None
+    _drop_unusable_playwright_browsers_path()
     executable = _chromium_executable()
     html_content = render_payload_to_html(payload)
     styles_path = _REPO_ROOT / "src" / "report" / "styles.css"
