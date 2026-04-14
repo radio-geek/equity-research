@@ -49,9 +49,10 @@ This file is the **README for AI coding agents** working on the Equity Research 
 | All node prompts | `src/nodes/prompts.py` |
 | NSE / financials / filings | `src/data/*.py` |
 | Report HTML/CSS | `src/report/templates/`, `src/report/styles.css`, `src/report/charts.py` |
-| Backend API | `backend/main.py`, `backend/reports.py`, `backend/symbols.py`, `backend/cache.py`, `backend/pdf_render.py`, `backend/feedback_store.py`, `backend/job_store.py` |
+| Backend API | `backend/main.py`, `backend/reports.py`, `backend/symbols.py`, `backend/cache.py`, `backend/pdf_render.py`, `backend/section_feedback_store.py`, `backend/job_store.py` |
+| Rate limiting | `backend/main.py` — `slowapi` limiter with `@limiter.limit(...)` decorators; key: `user:{id}` (authenticated) or client IP (anonymous). Limits: reports 3/min+10/day, PDF 10/min, quote/indices 30/min, suggest 60/min, feedback 10/min, auth 10/min |
 | Auth & sessions | `backend/auth.py` (Google OAuth2, JWT, DB-backed sessions), `backend/db.py` (psycopg2 pool) |
-| DB migrations | `backend/migrations/*.sql` — start with `001_init.sql`, `002_sessions.sql`; `005_reports_requested_by_generation_ms.sql` adds `reports.requested_by` / `generation_ms` for cache writes |
+| DB migrations | `backend/migrations/*.sql` — run in order: `001_init.sql`, `002_sessions.sql`, `003_error_logs.sql`, `004_concall_transcripts.sql`, `005_reports_requested_by_generation_ms.sql` |
 | Frontend auth | `frontend/src/contexts/AuthContext.tsx`, `frontend/src/components/Header.tsx`, `frontend/src/components/ProtectedRoute.tsx` |
 | Frontend | `frontend/src/` (Vite + React + TS) |
 | Config / env | `src/config.py`, `.env` (from `.env.example`) |
@@ -65,6 +66,7 @@ This file is the **README for AI coding agents** working on the Equity Research 
 - **Frontend**: Built via `vercel.json` (`buildCommand`: `cd frontend && npm ci && npm run build`, `outputDirectory`: `frontend/dist`). SPA fallback rewrite serves `index.html` for non-API paths.
 - **API**: `api/index.py` imports `backend.main:app` and wraps it in `VercelAuthPathMiddleware` so `/auth/*` requests (rewritten to `/api/vercel_auth/*`) are routed correctly. Root `requirements.txt` is used for the Python function.
 - **CORS**: `backend/main.py` adds `VERCEL_URL` (https/http) to allowed origins when set.
+- **Rate limiting**: `slowapi` uses in-memory storage; counters reset on every cold start and are not shared across Vercel function instances. Limits work correctly on Render (single persistent process).
 - See [README.md](README.md) § Deploying on Vercel for env vars, Google OAuth production redirect URI, and serverless limitations (timeout, in-memory job store).
 
 ## GitHub Pages deployment (frontend only)
@@ -173,7 +175,7 @@ This file is the single source of truth for node behavior across sessions; keep 
 
 1. **Adding a new research node**: Implement in `src/nodes/<name>.py`, add prompt in `src/nodes/prompts.py`, register in `src/graph.py` (fan-out and edge to aggregate), add state fields in `src/state.py`, wire section in `src/report/templates/base.html` and styles in `src/report/styles.css`, then **update `node-docs.txt`**.  
 2. **Changing a prompt**: Edit `src/nodes/prompts.py`; if output structure or CSS classes change, update report template/CSS and `node-docs.txt`.  
-3. **Backend API**: Routes in `backend/main.py`; report job logic in `backend/reports.py`; cache in `backend/cache.py`; PDF in `backend/pdf_render.py`.  
+3. **Backend API**: Routes in `backend/main.py`; report job logic in `backend/reports.py`; cache in `backend/cache.py`; PDF in `backend/pdf_render.py`. When adding a new route, add a `@limiter.limit("N/period")` decorator and ensure `request: Request` is in the function signature (required by `slowapi`).
 4. **Report layout/styling**: `src/report/templates/base.html`, `src/report/styles.css`, `src/nodes/report_generator.py` (payload assembly).  
 5. **State contract**: Any new state key used by nodes should be added to `ResearchState` in `src/state.py` and documented in `node-docs.txt` if it affects report or node behavior.
 
