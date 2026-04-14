@@ -426,6 +426,24 @@ export async function submitDetailedFeedback(body: DetailedFeedbackRequest): Pro
   return res.json()
 }
 
+export async function submitContactMessage(body: {
+  name: string
+  email: string
+  message: string
+}): Promise<{ ok: boolean }> {
+  const res = await fetch(`${API_BASE}/api/contact`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    if (res.status === 429) throw new Error("You've reached the daily contact limit. Please try again tomorrow.")
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail ?? res.statusText)
+  }
+  return res.json()
+}
+
 export interface IndexTick {
   name: string
   value: string

@@ -1,9 +1,10 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext'
 import Header from './components/Header'
 import Landing from './Landing'
 import ReportPage from './ReportPage'
+import { ContactModal } from './components/ContactModal'
 import { initAnalytics, trackPageView } from './analytics'
 
 function AnalyticsTracker() {
@@ -21,7 +22,7 @@ function AnalyticsInit() {
   return null
 }
 
-function Footer() {
+function Footer({ onContactOpen }: { onContactOpen: () => void }) {
   const year = new Date().getFullYear()
   return (
     <footer className="se-footer">
@@ -44,7 +45,23 @@ function Footer() {
         <div className="se-footer__links">
           <a href="/">Privacy Policy</a>
           <a href="/">Terms of Service</a>
-          <a href="/">Contact Support</a>
+          <button
+            type="button"
+            onClick={onContactOpen}
+            style={{
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              cursor: 'pointer',
+              fontSize: 'inherit',
+              fontFamily: 'inherit',
+              color: 'inherit',
+              textDecoration: 'underline',
+              textUnderlineOffset: '2px',
+            }}
+          >
+            Contact Support
+          </button>
         </div>
       </div>
     </footer>
@@ -52,6 +69,8 @@ function Footer() {
 }
 
 export default function App() {
+  const [showContact, setShowContact] = useState(false)
+
   return (
     <AuthProvider>
       <AnalyticsInit />
@@ -60,8 +79,9 @@ export default function App() {
         <Route path="/" element={<Landing />} />
         <Route path="/:symbol/report" element={<ReportPage />} />
       </Routes>
-      <Footer />
+      <Footer onContactOpen={() => setShowContact(true)} />
       <AnalyticsTracker />
+      {showContact && <ContactModal onClose={() => setShowContact(false)} />}
     </AuthProvider>
   )
 }

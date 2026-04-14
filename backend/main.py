@@ -46,6 +46,7 @@ from backend.auth import (
 from backend.db import fetchone as db_fetchone
 from backend.error_store import log_error
 from backend.section_feedback_store import append_section_feedback
+from backend.contact_store import save_contact_message
 from backend.job_store import create_job_store, get as job_get, set_pending
 from backend.pdf_render import render_payload_to_pdf
 from backend.pdf_download_store import log_pdf_download
@@ -397,4 +398,22 @@ async def api_feedback_detailed(request: Request, body: DetailedFeedbackRequest)
     )
     report_id: int | None = report_row["id"] if report_row else None
     append_section_feedback(body.symbol, body.section_ratings, body.suggestion, user_id=user_id, report_id=report_id)
+    return {"ok": True}
+
+
+class ContactRequest(BaseModel):
+    name: str
+    email: str
+    message: str
+
+
+@app.post("/api/contact")
+@limiter.limit("5/day")
+async def api_contact(request: Request, body: ContactRequest):
+    """Save a contact support message to the database."""
+    if not body.name.strip() or not body.email.strip() or not body.message.strip():
+        raise HTTPException(status_code=400, detail="All fields are required")
+    user = get_current_user_optional(request)
+    user_id: int | None = user["id"] if user else None
+    save_contact_message(body.name.strip(), body.email.strip(), body.message.strip(), user_id=user_id)
     return {"ok": True}
