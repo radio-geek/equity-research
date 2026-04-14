@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 from backend.db import fetchone, fetchone_with_return
 
 CACHE_TTL_HOURS = 24
+NO_CONCALL_TTL_DAYS = 7
 logger = logging.getLogger(__name__)
 
 
@@ -67,8 +68,9 @@ def get_cached_report_if_fresh(
 ) -> dict | None:
     """Return cached report unless a newer transcript has been stored since it was generated.
 
-    Reports never expire on a time basis — they are only invalidated when a new concall
-    transcript is stored (quarterly cadence). The expires_at column is ignored here.
+    For concall companies: invalidated when a new transcript arrives (quarterly cadence).
+    For no-concall companies: invalidated after NO_CONCALL_TTL_DAYS days.
+    The expires_at column is ignored here.
     """
     try:
         row = fetchone(
@@ -80,13 +82,22 @@ def get_cached_report_if_fresh(
         )
         if not row:
             return None
-        # Report is stale only if a transcript was stored after it was generated
+        # For concall companies: stale if a newer transcript exists
         if latest_transcript_stored_at and row["generated_at"] < latest_transcript_stored_at:
             logger.info(
                 "cache: report for %s/%s is stale (generated=%s, latest_transcript=%s)",
                 symbol, exchange, row["generated_at"], latest_transcript_stored_at,
             )
             return None
+        # For no-concall companies: apply a time-based TTL
+        if latest_transcript_stored_at is None:
+            age = datetime.now(timezone.utc) - row["generated_at"]
+            if age.days >= NO_CONCALL_TTL_DAYS:
+                logger.info(
+                    "cache: no-concall report for %s/%s is %d days old, regenerating",
+                    symbol, exchange, age.days,
+                )
+                return None
         return row["payload"]
     except Exception as e:
         logger.warning("cache freshness lookup failed for %s/%s: %s", symbol, exchange, e)

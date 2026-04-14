@@ -85,6 +85,9 @@ export async function createReport(symbol: string, exchange: string = 'NSE'): Pr
     body: JSON.stringify({ symbol, exchange }),
   })
   if (!res.ok) {
+    if (res.status === 429) {
+      throw new Error("You've reached your daily limit of 10 reports. Please try again tomorrow.")
+    }
     const err = await res.json().catch(() => ({}))
     throw new Error(err.detail ?? res.statusText)
   }
@@ -417,6 +420,24 @@ export async function submitDetailedFeedback(body: DetailedFeedbackRequest): Pro
     body: JSON.stringify(body),
   })
   if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail ?? res.statusText)
+  }
+  return res.json()
+}
+
+export async function submitContactMessage(body: {
+  name: string
+  email: string
+  message: string
+}): Promise<{ ok: boolean }> {
+  const res = await fetch(`${API_BASE}/api/contact`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    if (res.status === 429) throw new Error("You've reached the daily contact limit. Please try again tomorrow.")
     const err = await res.json().catch(() => ({}))
     throw new Error(err.detail ?? res.statusText)
   }

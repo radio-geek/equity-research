@@ -227,10 +227,11 @@ npm run dev
 
 Then open **http://localhost:5173**. Use the search bar to find a stock (NSE symbol or company name); select a suggestion to go to `/:symbol/report`. The report is generated in the background and shown when ready.
 
-- **Caching**: Reports are cached in the `reports` PostgreSQL table for 24 hours per symbol. If a cached report exists, it is served immediately without re-running the pipeline.
-- **PDF download**: On the report page, use “Download PDF” to get a styled PDF (1) Playwright headless Chromium—run `playwright install chromium` after pip install (on Apple Silicon, if launch still fails, try `playwright install --force chromium` so the arm64 bundle replaces an older x64 cache); (2) WeasyPrint—e.g. `brew install pango cairo` on macOS; (3) ReportLab fallback. For deployment, install Chromium for best PDF fidelity. Quick check from repo root: `PYTHONPATH=. python scripts/smoke_pdf_local.py` writes `/tmp/equity-research-smoke.pdf`.
-- **Feedback**: Thumbs up/down and an optional comment can be submitted; stored in the `feedback` PostgreSQL table. If logged in, feedback is linked to the user.
+- **Caching**: Reports are cached in the `reports` PostgreSQL table for 24 hours per symbol (concall companies) or 7 days (no-concall companies). If a cached report exists, it is served immediately without re-running the pipeline.
+- **PDF download**: On the report page, use “Download PDF” to get a styled PDF (1) Playwright headless Chromium—run `playwright install chromium` after pip install; (2) WeasyPrint—e.g. `brew install pango cairo` on macOS; (3) ReportLab fallback. For deployment, install Chromium for best PDF fidelity.
+- **Feedback**: Per-section star ratings and suggestions stored in `section_feedback` table. If logged in, feedback is linked to the user.
 - **Auth**: “Sign in with Google” button on the landing page. JWT stored in `localStorage`. Requires `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `JWT_SECRET` in `.env`.
+- **Rate limiting**: Enforced via `slowapi` on all public endpoints. Authenticated users are limited by user ID; anonymous by IP. Key limits: report generation (`POST /api/reports`) is capped at **3/minute and 10/day** per user to control LLM costs. Other endpoints: PDF download 10/min, live quote 30/min, symbol suggest 60/min. Exceeding a limit returns `429 Too Many Requests`.
 
 ## Deploying on Vercel
 
@@ -268,6 +269,7 @@ Run the same PostgreSQL migrations on your hosted database as in [PostgreSQL Set
 
 - **Function timeout**: Report generation runs inside the serverless function. Long runs may hit the plan limit (e.g. 60s on Hobby). Cached reports are returned immediately without re-running the pipeline.
 - **In-memory job store**: The backend uses an in-memory job store; on serverless, background report jobs may not complete after the HTTP response is sent. For production at scale, consider a queue (e.g. Vercel background functions or an external worker) and a persistent job store.
+- **Rate limiting**: `slowapi` uses in-memory storage; counters reset on every cold start. Limits are enforced per function instance, not globally across Vercel invocations.
 
 ## Deploying frontend to GitHub Pages
 
@@ -321,13 +323,16 @@ On the backend (e.g. Render), set `FRONTEND_URL` to your Pages origin, e.g. `htt
 - `src/report/` – Jinja2 templates and CSS for the PDF report.
 - `reports/` – Generated PDFs.
 - `run.py` – CLI entrypoint.
-- `backend/` – FastAPI app: symbol suggest, report job start/status, PDF export, feedback, Google OAuth + JWT auth.
+- `backend/` – FastAPI app: symbol suggest, report job start/status, PDF export, feedback, Google OAuth + JWT auth, rate limiting.
+  - `backend/main.py` – All API routes; `slowapi` limiter (user-keyed when authenticated, IP-keyed otherwise)
   - `backend/db.py` – PostgreSQL connection pool and query helpers
   - `backend/auth.py` – Google OAuth2 flow, JWT create/verify, `get_current_user` dependency
-  - `backend/cache.py` – Report cache backed by `reports` table (24h TTL)
-  - `backend/feedback_store.py` – Feedback stored in `feedback` table
+  - `backend/cache.py` – Report cache backed by `reports` table (24h TTL for concall, 7-day TTL for no-concall)
+  - `backend/section_feedback_store.py` – Per-section star ratings stored in `section_feedback` table
   - `backend/migrations/001_init.sql` – Initial schema (users, reports, feedback)
   - `backend/migrations/002_sessions.sql` – Sessions table (required for Google Auth)
+  - `backend/migrations/003_error_logs.sql` – Error logs table
+  - `backend/migrations/004_concall_transcripts.sql` – Concall transcript cache table
   - `backend/migrations/005_reports_requested_by_generation_ms.sql` – Extra columns on `reports` for cache writes
 - `frontend/` – Vite + React + TypeScript: landing (search, indices ticker, review carousel), report page with PDF download and feedback (thumbs up/down + comment).
 

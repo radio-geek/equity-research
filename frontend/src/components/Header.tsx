@@ -27,7 +27,8 @@ export default function Header() {
     <header className={`se-header${isLanding ? '' : ' se-header--light'}`}>
       <div className="se-header__inner">
         <button className="se-header__logo" onClick={() => navigate('/')}>
-          Equity Research
+          <span className="logo-valyu">valyu</span>
+          <span className="logo-tagline">EQUITY RESEARCH</span>
         </button>
 
         <div className="se-header__actions">

@@ -12,6 +12,9 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 # Fail at startup if nse is missing (ensures we're running with the correct venv)
 try:
@@ -38,16 +41,33 @@ from backend.auth import (
     revoke_session,
     upsert_user,
     verify_oauth_state,
+    verify_token,
 )
 from backend.db import fetchone as db_fetchone
 from backend.error_store import log_error
 from backend.section_feedback_store import append_section_feedback
+from backend.contact_store import save_contact_message
 from backend.job_store import create_job_store, get as job_get, set_pending
 from backend.pdf_render import render_payload_to_pdf
 from backend.pdf_download_store import log_pdf_download
 from backend.market_indices import fetch_market_indices
 from backend.reports import get_report_status, start_report
 from backend import symbols as symbols_module
+
+
+def _rate_limit_key(request: Request) -> str:
+    """Use user_id for authenticated requests, client IP for anonymous ones."""
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        try:
+            user_id, _ = verify_token(auth.removeprefix("Bearer ").strip())
+            return f"user:{user_id}"
+        except Exception:
+            pass
+    return get_remote_address(request)
+
+
+limiter = Limiter(key_func=_rate_limit_key)
 
 
 class CreateReportRequest(BaseModel):
@@ -86,6 +106,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Equity Research API", lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 _origins_set: set[str] = set()
 
@@ -142,7 +164,9 @@ def _valid_return_path(path: str | None) -> bool:
 
 
 @app.get("/auth/google")
+@limiter.limit("10/minute")
 async def auth_google_login(
+    request: Request,
     return_to: str | None = None,
     client_origin: str | None = None,
 ):
@@ -248,14 +272,16 @@ async def auth_me(current_user: dict = Depends(get_current_user)):
 
 
 @app.get("/api/market-indices")
-async def api_market_indices():
+@limiter.limit("30/minute")
+async def api_market_indices(request: Request):
     """Return live Nifty 50, Sensex, Nifty Bank quotes from Yahoo Finance (60 s cache)."""
     data = await fetch_market_indices()
     return {"indices": data}
 
 
 @app.get("/api/quote/{symbol}")
-async def api_quote(symbol: str, exchange: str = "NSE"):
+@limiter.limit("30/minute")
+async def api_quote(request: Request, symbol: str, exchange: str = "NSE"):
     """Return live stock quote from Screener for the given symbol."""
     from src.data.screener_scraper import fetch_company_quote
     import asyncio
@@ -268,7 +294,8 @@ async def api_quote(symbol: str, exchange: str = "NSE"):
 
 
 @app.get("/api/symbols/suggest")
-async def api_symbols_suggest(q: str = ""):
+@limiter.limit("60/minute")
+async def api_symbols_suggest(request: Request, q: str = ""):
     """Return list of { symbol, name } for typeahead; error if NSE lookup failed."""
     import asyncio
     loop = asyncio.get_event_loop()
@@ -277,7 +304,8 @@ async def api_symbols_suggest(q: str = ""):
 
 
 @app.post("/api/reports")
-async def api_reports_create(body: CreateReportRequest, request: Request):
+@limiter.limit("10/day")
+async def api_reports_create(request: Request, body: CreateReportRequest):
     """Start a report job; if cached report exists (< 24h), complete immediately with from_cache."""
     symbol = (body.symbol or "").strip().upper()
     exchange = (body.exchange or "NSE").strip().upper()
@@ -313,7 +341,8 @@ async def api_reports_html(report_id: str):
 
 
 @app.get("/api/reports/{report_id}/pdf")
-async def api_reports_pdf(report_id: str, current_user: dict = Depends(get_current_user)):
+@limiter.limit("10/minute")
+async def api_reports_pdf(request: Request, report_id: str, current_user: dict = Depends(get_current_user)):
     """Return report as PDF attachment when status is completed. Requires authentication."""
     import time
     store = get_store()
@@ -358,7 +387,8 @@ class DetailedFeedbackRequest(BaseModel):
 
 
 @app.post("/api/feedback/detailed")
-async def api_feedback_detailed(body: DetailedFeedbackRequest, request: Request):
+@limiter.limit("10/minute")
+async def api_feedback_detailed(request: Request, body: DetailedFeedbackRequest):
     """Store per-section star ratings and optional suggestion. User optional."""
     user = get_current_user_optional(request)
     user_id = user["id"] if user else None
@@ -368,4 +398,22 @@ async def api_feedback_detailed(body: DetailedFeedbackRequest, request: Request)
     )
     report_id: int | None = report_row["id"] if report_row else None
     append_section_feedback(body.symbol, body.section_ratings, body.suggestion, user_id=user_id, report_id=report_id)
+    return {"ok": True}
+
+
+class ContactRequest(BaseModel):
+    name: str
+    email: str
+    message: str
+
+
+@app.post("/api/contact")
+@limiter.limit("5/day")
+async def api_contact(request: Request, body: ContactRequest):
+    """Save a contact support message to the database."""
+    if not body.name.strip() or not body.email.strip() or not body.message.strip():
+        raise HTTPException(status_code=400, detail="All fields are required")
+    user = get_current_user_optional(request)
+    user_id: int | None = user["id"] if user else None
+    save_contact_message(body.name.strip(), body.email.strip(), body.message.strip(), user_id=user_id)
     return {"ok": True}
