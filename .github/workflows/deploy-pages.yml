@@ -33,7 +33,7 @@ jobs:
       - name: Build frontend
         env:
           VITE_API_URL: ${{ secrets.RENDER_API_URL }}
-          VITE_BASE_PATH: /${{ github.event.repository.name }}/
+          VITE_BASE_PATH: /
         run: |
           cd frontend
           npm ci
