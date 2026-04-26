@@ -158,10 +158,12 @@ def _mainboard_flow(company_name: str, symbol: str, transcripts: list[dict]) -> 
     cards: list[dict] = []
     for quarter_label in quarters:
         t = transcript_map.get(_short_quarter(quarter_label))
-        if t:
+        if t and t.get("text"):
             logger.info("concall_evaluator: extracting card for %s %s", symbol, quarter_label)
             card = _extract_single_card(company_name, quarter_label, t)
         else:
+            if t and not t.get("text"):
+                logger.warning("concall_evaluator: empty transcript text for %s %s — skipping LLM", symbol, quarter_label)
             card = _make_missing_card(quarter_label)
         cards.append(card)
 

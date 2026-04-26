@@ -110,7 +110,8 @@ def _make_session() -> requests.Session:
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         ),
         "Accept": "text/html,application/xhtml+xml,*/*",
-        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Language": "en-IN,en-GB;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Referer": "https://www.bseindia.com/",
     })
     return s
 
@@ -304,7 +305,7 @@ def _extract_pdf_text(link: str, session: requests.Session) -> str:
         max_pdf_chars=_MAX_CHARS_PER_PDF,
         max_zip_per_pdf=_MAX_CHARS_PER_PDF,
         max_zip_total=_MAX_CHARS_PER_PDF,
-        timeout=30,
+        timeout=60,
     )
 
 
