@@ -91,13 +91,22 @@ def download_and_extract_text(
     timeout: int = 60,
 ) -> str:
     """Download PDF or ZIP from URL and return extracted plain text."""
-    try:
-        resp = session.get(link, timeout=timeout)
-        resp.raise_for_status()
-        content = resp.content
-    except Exception as e:
-        logger.warning("pdf_text: failed to download %s: %s", link, e)
-        return ""
+    import time
+
+    content = None
+    for attempt in range(3):
+        try:
+            resp = session.get(link, timeout=timeout)
+            resp.raise_for_status()
+            content = resp.content
+            break
+        except Exception as e:
+            if attempt == 2:
+                logger.warning("pdf_text: failed to download %s after 3 attempts: %s", link, e)
+                return ""
+            wait = 2 ** attempt
+            logger.warning("pdf_text: download attempt %d failed for %s: %s — retrying in %ds", attempt + 1, link, e, wait)
+            time.sleep(wait)
 
     lower = link.lower()
     if lower.endswith(".zip"):

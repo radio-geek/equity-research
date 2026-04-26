@@ -305,7 +305,7 @@ def _extract_pdf_text(link: str, session: requests.Session) -> str:
         max_pdf_chars=_MAX_CHARS_PER_PDF,
         max_zip_per_pdf=_MAX_CHARS_PER_PDF,
         max_zip_total=_MAX_CHARS_PER_PDF,
-        timeout=30,
+        timeout=60,
     )
 
 
