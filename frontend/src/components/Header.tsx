@@ -32,6 +32,19 @@ export default function Header({ onJournalOpen }: { onJournalOpen?: () => void }
         </button>
 
         <div className="se-header__actions">
+          <button
+            type="button"
+            className={`se-header__navlink${
+              location.pathname === '/results-calendar' ? ' active' : ''
+            }`}
+            onClick={() => {
+              trackEvent('Results Calendar Opened', {})
+              navigate('/results-calendar')
+            }}
+          >
+            Results Calendar
+          </button>
+
           {isAuthenticated && user ? (
             <>
               <button

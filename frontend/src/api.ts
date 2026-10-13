@@ -499,6 +499,82 @@ export async function addTradeJournalEntry(body: {
   return res.json()
 }
 
+// ── Earnings Calendar ──────────────────────────────────────────────────────
+
+/** Why a comparison has no value. Never render a delta without checking this first:
+ *  `value` is null when there is no peer, and `null < 0` is false in JS, so a naive
+ *  `value < 0 ? 'earlier' : 'later'` would label a company with no history as "later". */
+export type ComparisonReason =
+  | 'ok'
+  | 'no_peer'
+  | 'not_comparable_audit_cycle'
+  | 'cadence_change'
+  | 'gap_in_history'
+  | 'period_unattributed'
+  | 'half_yearly_no_sequential_peer'
+
+export interface EarningsComparison {
+  value: number | null          // days: negative = reported earlier than the peer
+  peer_period_end: string | null
+  peer_period_type: string | null
+  peer_results_date: string | null
+  reason: ComparisonReason
+}
+
+export interface EarningsPriorPeriod {
+  period_end: string
+  period_type: string
+  results_date: string
+  lag_days: number | null
+  date_status: string
+}
+
+export interface EarningsCalendarEntry {
+  id: number
+  symbol: string
+  exchange: string
+  company_name: string | null
+  period_end: string | null
+  period_type: string | null
+  covers_full_year: boolean
+  fiscal_year: number | null
+  fiscal_quarter: number | null
+  results_date: string
+  intimated_date: string
+  first_intimated_date: string
+  date_status: string
+  revision_count: number
+  lag_days: number | null
+  lag_is_provisional: boolean
+  period_source: string | null
+  period_confidence: number | null
+  announced_at: string | null
+  attachment: string | null
+  prior_periods: EarningsPriorPeriod[]
+  yoy: EarningsComparison
+  qoq: EarningsComparison
+}
+
+export async function getEarningsCalendar(params: {
+  from?: string
+  to?: string
+  periodType?: string
+} = {}): Promise<EarningsCalendarEntry[]> {
+  const qs = new URLSearchParams()
+  if (params.from) qs.set('from', params.from)
+  if (params.to) qs.set('to', params.to)
+  if (params.periodType) qs.set('period_type', params.periodType)
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  const res = await fetch(`${API_BASE}/api/earnings-calendar${suffix}`)
+  if (!res.ok) {
+    if (res.status === 429) throw new Error('Rate limit reached. Please try again in a minute.')
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as { detail?: string }).detail ?? res.statusText)
+  }
+  const data = await res.json()
+  return (Array.isArray(data.entries) ? data.entries : []) as EarningsCalendarEntry[]
+}
+
 export async function fetchLiveQuote(symbol: string, exchange = 'NSE'): Promise<ReportView['screenerQuote']> {
   const res = await fetch(`${API_BASE}/api/quote/${encodeURIComponent(symbol)}?exchange=${exchange}`)
   if (!res.ok) throw new Error('Quote fetch failed')

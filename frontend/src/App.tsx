@@ -4,6 +4,7 @@ import { AuthProvider } from './contexts/AuthContext'
 import Header from './components/Header'
 import Landing from './Landing'
 import ReportPage from './ReportPage'
+import ResultsCalendar from './ResultsCalendar'
 import TermsPage from './pages/TermsPage'
 import PrivacyPage from './pages/PrivacyPage'
 import { ContactModal } from './components/ContactModal'
@@ -81,6 +82,7 @@ export default function App() {
       <Header onJournalOpen={() => setShowJournal(true)} />
       <Routes>
         <Route path="/" element={<Landing />} />
+        <Route path="/results-calendar" element={<ResultsCalendar />} />
         <Route path="/:symbol/report" element={<ReportPage />} />
         <Route path="/terms" element={<TermsPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />

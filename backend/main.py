@@ -8,7 +8,7 @@ import sys
 import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -452,6 +452,46 @@ async def api_journal_add(
 
     entry = tj_add_entry(current_user["id"], symbol, action, trade_date, thesis)
     return {"ok": True, "entry": entry}
+
+
+@app.get("/api/earnings-calendar")
+@limiter.limit("60/minute")
+async def api_earnings_calendar(
+    request: Request,
+    from_date: str = Query("", alias="from"),
+    to_date: str = Query("", alias="to"),
+    period_type: str = "",
+    limit: int = 500,
+):
+    """Return announced results dates with YoY/QoQ timing deltas and trailing periods.
+
+    Defaults to a window of the last 7 days through 30 days ahead, i.e. what has just been
+    announced plus everything already scheduled.
+    """
+    import asyncio
+    from datetime import date as _date, timedelta
+
+    from backend.earnings_date_store import get_calendar
+
+    today = _date.today()
+    try:
+        start = _date.fromisoformat(from_date) if from_date else today - timedelta(days=7)
+        end = _date.fromisoformat(to_date) if to_date else today + timedelta(days=30)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="from/to must be YYYY-MM-DD")
+    if start > end:
+        raise HTTPException(status_code=400, detail="from must not be after to")
+
+    ptype = (period_type or "").strip().upper() or None
+    if ptype is not None and ptype not in ("Q", "H", "9M", "FY"):
+        raise HTTPException(status_code=400, detail="period_type must be Q, H, 9M or FY")
+
+    limit = max(1, min(limit, 1000))
+    loop = asyncio.get_event_loop()
+    entries = await loop.run_in_executor(
+        None, get_calendar, start, end, ptype, limit
+    )
+    return {"entries": entries, "from": start.isoformat(), "to": end.isoformat()}
 
 
 @app.post("/api/contact")

@@ -76,7 +76,13 @@ psql -U postgres -d equity_research -f backend/migrations/004_concall_transcript
 
 # Report cache columns (requested_by, generation_ms) — required for set_cached_report()
 psql -U postgres -d equity_research -f backend/migrations/005_reports_requested_by_generation_ms.sql
+
+# Earnings date calendar (board-meeting intimation log + derived calendar)
+psql -U postgres -d equity_research -f backend/migrations/008_earnings_dates.sql
 ```
+
+Or run every migration in order with `python backend/run_migrations.py` (uses `DATABASE_URL`;
+all migrations are idempotent, so re-running is safe).
 
 If using the macOS installer, prefix with the full path e.g. `/Library/PostgreSQL/18/bin/psql`.
 If prompted for a password, prefix each command with `PGPASSWORD=your_password`.
@@ -302,12 +308,66 @@ Push to the `main` branch. The workflow (`.github/workflows/deploy-pages.yml`) b
 
 On the backend (e.g. Render), set `FRONTEND_URL` to your Pages origin, e.g. `https://<user>.github.io` or `https://<user>.github.io/equity-research`, so the backend allows requests from the frontend.
 
+## Results Calendar
+
+A screener at `/results-calendar` (public, no sign-in) listing companies that have announced a
+quarterly-results date, with how that timing compares to the same period last year and to the
+previous period.
+
+**Why "lag" and not dates.** Q1 results land in July and Q2 in October, so comparing "17 Jul" to
+"17 Oct" is meaningless. Every comparison uses **lag — days from period end to declaration** — and
+each delta is simply `lag_current − lag_peer`. A negative delta means the company reported earlier.
+
+| Column | Meaning |
+|---|---|
+| Period | e.g. `Q2 FY27`; badged when the filer is half-yearly or annual |
+| Results date | The announced date, plus how far away it is. Marked when revised |
+| Lag | Days from period end to declaration |
+| vs last year (YoY) | Same period one year earlier, in days |
+| vs prev period (QoQ) | Previous period, in days. Refused across a Q4/annual boundary |
+| Announced | When the intimation was filed, and how many days of notice |
+
+**Data source.** NSE `/api/corporate-board-meetings` via the `nse` package, which serves
+forthcoming *and* historical windows, market-wide. BSE's announcement API returns 403 (Akamai) and
+Screener carries no announcement dates, so neither is a fallback.
+
+**Populating it.** Set up as a Render Cron Job (daily during results season) running:
+
+```bash
+python scripts/refresh_earnings_calendar.py            # last 7 days through 30 days ahead
+python scripts/refresh_earnings_calendar.py --backfill-months 17 --stats   # seed history
+python scripts/refresh_earnings_calendar.py --backfill-months 17 --reattribute
+```
+
+Needs `DATABASE_URL` only. All writes are idempotent upserts, so overlapping windows are safe.
+`--stats` prints the attribution-quality breakdown; investigate if the `proximity` share grows.
+
+`--reattribute` rebuilds the calendar from the stored intimation log **without re-fetching NSE**.
+That is what the raw `board_meeting_intimations` table is for: period attribution is heuristic and
+will be improved over time, and a parser fix must roll out over all history in seconds.
+
+**Caveats worth knowing.**
+
+- Dates are board-meeting *intimations* — the company's stated plan, which can move. Postponements
+  are preserved (`first_intimated_date`, `revision_count`), not overwritten.
+- Period attribution is inferred, mostly from the filing text and otherwise from the meeting date.
+  Rows attributed with low confidence are badged "inferred" in the UI.
+- Backfill at least **17 months**: a 12-month window clips the prior-year peer for the earliest
+  quarter, leaving those rows with no YoY comparison.
+- The summary strip skews "earlier" mid-season, because only companies that have already announced
+  appear and they are the early reporters by definition. Per-company deltas are sound; the
+  aggregate ratio is not.
+- The signal is genuinely weak. Reporting early correlates with good news in the literature, but
+  noisily — timing also moves for auditor scheduling and board availability. The UI deliberately
+  shows neutral numbers rather than a verdict.
+
 ## Data sources
 
 - **Company and market data**: Free NSE data via the `nse` package (company meta, quote, shareholding). Requests are rate-limited to avoid overloading NSE.
 - **Financials**: Ratios (ROE, D/E, etc.) from `nifpy` (Yahoo Finance NSE tickers, e.g. RELIANCE.NS).
 - **Latest data**: Research nodes use **OpenAI’s built-in web search** (Responses API with `web_search_preview`) so the model can fetch recent news and data when writing company overview, management, financial risk, and sectoral sections. No extra API key is required. If the Responses API is unavailable for your model, you can set `TAVILY_API_KEY` to use Tavily as a fallback.
 - **Concall transcripts**: Not available from free NSE/BSE; the concall evaluator node is stubbed. You can plug in Trendlyne or another source later.
+- **Results dates**: NSE board-meeting intimations (`/api/corporate-board-meetings`) via the `nse` package — market-wide, and queryable over historical windows. Note that NSE's `/api/search/autocomplete` is blocked by bot protection while this endpoint is not, so do not assume all NSE endpoints behave the same. See § Results Calendar.
 
 ## Project structure
 
@@ -328,6 +388,10 @@ On the backend (e.g. Render), set `FRONTEND_URL` to your Pages origin, e.g. `htt
   - `backend/migrations/003_error_logs.sql` – Error logs table
   - `backend/migrations/004_concall_transcripts.sql` – Concall transcript cache table
   - `backend/migrations/005_reports_requested_by_generation_ms.sql` – Extra columns on `reports` for cache writes
+  - `backend/migrations/008_earnings_dates.sql` – Board-meeting intimation log + derived earnings date calendar
+  - `backend/earnings_date_store.py` – Calendar reads/writes, YoY/QoQ peer resolution
+- `src/data/nse_board_meetings.py` – NSE board-meeting fetch and fiscal-period attribution
+- `scripts/refresh_earnings_calendar.py` – Populates the calendar (Render Cron Job; see § Results Calendar)
 - `frontend/` – Vite + React + TypeScript: landing (search, indices ticker, review carousel), report page with PDF download and feedback (thumbs up/down + comment).
 
 ## Contributing / Node Development
