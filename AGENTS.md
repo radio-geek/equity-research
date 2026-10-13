@@ -117,9 +117,10 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 | NSE / financials / filings | `src/data/*.py` |
 | Report HTML/CSS | `src/report/templates/`, `src/report/styles.css`, `src/report/charts.py` |
 | Backend API | `backend/main.py`, `backend/reports.py`, `backend/symbols.py`, `backend/cache.py`, `backend/pdf_render.py`, `backend/section_feedback_store.py`, `backend/job_store.py` |
+| Earnings calendar | `src/data/nse_board_meetings.py` (fetch + period attribution), `backend/earnings_date_store.py`, `scripts/refresh_earnings_calendar.py`, `frontend/src/ResultsCalendar.tsx` — see § Earnings calendar below |
 | Rate limiting | `backend/main.py` — `slowapi` limiter with `@limiter.limit(...)` decorators; key: `user:{id}` (authenticated) or client IP (anonymous). Limits: reports 3/min+10/day, PDF 10/min, quote/indices 30/min, suggest 60/min, feedback 10/min, auth 10/min |
 | Auth & sessions | `backend/auth.py` (Google OAuth2, JWT, DB-backed sessions), `backend/db.py` (psycopg2 pool) |
-| DB migrations | `backend/migrations/*.sql` — run in order: `001_init.sql`, `002_sessions.sql`, `003_error_logs.sql`, `004_concall_transcripts.sql`, `005_reports_requested_by_generation_ms.sql` |
+| DB migrations | `backend/migrations/*.sql` — run in order: `001_init.sql`, `002_sessions.sql`, `003_error_logs.sql`, `004_concall_transcripts.sql`, `005_reports_requested_by_generation_ms.sql`, `006_contact_support.sql`, `007_trade_journal.sql`, `008_earnings_dates.sql` |
 | Frontend auth | `frontend/src/contexts/AuthContext.tsx`, `frontend/src/components/Header.tsx`, `frontend/src/components/ProtectedRoute.tsx` |
 | Frontend | `frontend/src/` (Vite + React + TS) |
 | Config / env | `src/config.py`, `.env` (from `.env.example`) |
@@ -144,6 +145,34 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - See [README.md](README.md) § Deploying frontend to GitHub Pages.
 
 ---
+
+## Earnings calendar
+
+Announced quarterly-results dates with YoY/QoQ timing deltas, served at `GET /api/earnings-calendar`
+and rendered at `/results-calendar`.
+
+- **Source**: NSE `/api/corporate-board-meetings` via the `nse` package's `boardMeetings()`, which
+  serves both forthcoming and historical windows, market-wide. BSE's announcement API returns 403
+  (Akamai) and Screener carries no announcement dates, so neither is a fallback. Note that NSE's
+  `/api/search/autocomplete` *is* blocked while this endpoint is not — do not assume all NSE
+  endpoints share a fate.
+- **Two tables** (`008_earnings_dates.sql`): `board_meeting_intimations` is the raw append-mostly
+  log; `earnings_dates` is the derived one-row-per-`(symbol, period_end)` projection. The log
+  exists so attribution can be re-run after a parser change **without re-fetching NSE**:
+  `python scripts/refresh_earnings_calendar.py --backfill-months 14 --reattribute`.
+- **Comparisons are objects with a `reason`**, never bare nulls. A null delta rendered by a naive
+  `value < 0 ? 'earlier' : 'later'` prints "later", because `null < 0` is false in JS. Always
+  branch on `reason` first.
+- **Period attribution is heuristic.** Derive the period from the meeting date by quarter-end
+  proximity; use `bm_desc` text only to refine. Watch for: `-ly` word forms ("Quarterly ended"),
+  filings that name two periods ("quarter and year ended March 31"), and quarterly filers who
+  report cumulative H1 figures ("quarter and half year ended") — the last is resolved by the
+  filer's own cadence, since only quarterly filers ever have Jun-30/Dec-31 period ends.
+- **Refresh** (Render Cron Job, daily during results season):
+  `python scripts/refresh_earnings_calendar.py` (defaults to last 7 days through 30 days ahead).
+  Use `--stats` to print the attribution quality breakdown; investigate if `proximity` share grows.
+- Bulk writes go through `backend/db.execute_many`; calling `execute()` per row commits per row
+  and is ~100x slower against a remote database.
 
 ## Node development (mandatory)
 

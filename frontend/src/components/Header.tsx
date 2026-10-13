@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { trackEvent } from '../analytics'
 
-export default function Header() {
+export default function Header({ onJournalOpen }: { onJournalOpen?: () => void }) {
   const { user, isAuthenticated, signIn, signOut } = useAuth()
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [pictureError, setPictureError] = useState(false)
@@ -32,7 +32,38 @@ export default function Header() {
         </button>
 
         <div className="se-header__actions">
+          <button
+            type="button"
+            className={`se-header__navlink${
+              location.pathname === '/results-calendar' ? ' active' : ''
+            }`}
+            onClick={() => {
+              trackEvent('Results Calendar Opened', {})
+              navigate('/results-calendar')
+            }}
+          >
+            Results Calendar
+          </button>
+
           {isAuthenticated && user ? (
+            <>
+              <button
+                type="button"
+                onClick={onJournalOpen}
+                aria-label="Trade Journal"
+                title="Trade Journal"
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  padding: '0.35rem', color: 'inherit', opacity: 0.7,
+                  display: 'flex', alignItems: 'center', borderRadius: 6,
+                }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                  <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                </svg>
+              </button>
             <div className="user-menu" ref={dropdownRef}>
               <button
                 className="user-avatar-btn"
@@ -91,6 +122,7 @@ export default function Header() {
                 />
               )}
             </div>
+            </>
           ) : (
             <button
               className="google-signin-btn"

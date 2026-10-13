@@ -9,7 +9,7 @@ from typing import Any
 
 import psycopg2
 from psycopg2 import pool as pg_pool
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import RealDictCursor, execute_batch
 
 _pool: pg_pool.SimpleConnectionPool | None = None
 
@@ -44,6 +44,19 @@ def execute(sql: str, params: tuple = ()) -> None:
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(sql, params)
+
+
+def execute_many(sql: str, params_list: list[tuple], page_size: int = 200) -> None:
+    """Execute one statement for many parameter sets in a single transaction.
+
+    For bulk writes only. Calling execute() in a loop borrows a connection and commits per
+    row, which on a remote database costs a full round trip each time.
+    """
+    if not params_list:
+        return
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            execute_batch(cur, sql, params_list, page_size=page_size)
 
 
 def fetchone(sql: str, params: tuple = ()) -> dict[str, Any] | None:

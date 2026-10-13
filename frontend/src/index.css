@@ -2646,3 +2646,147 @@ body {
 }
 
 /* ── Legacy App Footer (kept for compatibility) ── */
+
+/* ----- Results Calendar ----- */
+
+.se-header__navlink {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  color: inherit;
+  opacity: 0.75;
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  white-space: nowrap;
+  transition: opacity 0.15s;
+}
+
+.se-header__navlink:hover {
+  opacity: 1;
+}
+
+.se-header__navlink.active {
+  opacity: 1;
+  font-weight: 600;
+}
+
+.rc-head {
+  margin-bottom: 1.25rem;
+}
+
+.rc-title {
+  font-family: var(--font-serif);
+  font-size: 1.9rem;
+  margin: 0 0 0.4rem;
+  color: var(--fg);
+}
+
+.rc-sub {
+  margin: 0;
+  max-width: 68ch;
+  color: var(--textMuted);
+  font-size: 0.925rem;
+  line-height: 1.55;
+}
+
+.rc-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.rc-tabs {
+  display: flex;
+  gap: 0.15rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-bottom: 1px solid var(--border);
+}
+
+.rc-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.rc-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.rc-select,
+.rc-search {
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--text);
+}
+
+.rc-search {
+  flex: 1 1 220px;
+  min-width: 180px;
+}
+
+.rc-select:focus,
+.rc-search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.rc-summary {
+  margin: 0 0 0.6rem;
+  font-size: 0.875rem;
+  color: var(--textMuted);
+}
+
+.rc-state {
+  padding: 2.5rem 0;
+  text-align: center;
+  color: var(--textMuted);
+  font-size: 0.9rem;
+}
+
+.rc-badge {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.05em 0.4em;
+  font-size: 0.7rem;
+  border-radius: 4px;
+  background: var(--surface2);
+  color: var(--textMuted);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.rc-badge--warn {
+  background: rgba(217, 119, 6, 0.12);
+  color: var(--amber);
+}
+
+.rc-note {
+  margin: 1rem 0 0;
+  max-width: 78ch;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: var(--textMuted);
+}
+
+@media (max-width: 640px) {
+  .rc-title {
+    font-size: 1.5rem;
+  }
+}
+
+.rc-caveat {
+  margin: -0.3rem 0 0.8rem;
+  max-width: 78ch;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--textMuted);
+  font-style: italic;
+}
