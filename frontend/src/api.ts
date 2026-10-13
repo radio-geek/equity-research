@@ -458,6 +458,47 @@ export async function getMarketIndices(): Promise<IndexTick[]> {
   return data.indices as IndexTick[]
 }
 
+// ── Trade Journal ──────────────────────────────────────────────────────────
+
+export interface TradeJournalEntry {
+  id: number
+  symbol: string
+  action: 'buy' | 'sell'
+  trade_date: string
+  thesis: string
+  created_at: string
+}
+
+export async function getTradeJournalEntries(): Promise<TradeJournalEntry[]> {
+  const res = await fetch(`${API_BASE}/api/journal`, { headers: authHeaders() })
+  if (!res.ok) {
+    if (res.status === 401) { clearToken(); throw new Error('Unauthorized') }
+    throw new Error(res.statusText)
+  }
+  const data = await res.json()
+  return data.entries as TradeJournalEntry[]
+}
+
+export async function addTradeJournalEntry(body: {
+  symbol: string
+  action: 'buy' | 'sell'
+  trade_date: string
+  thesis: string
+}): Promise<{ ok: boolean; entry: TradeJournalEntry }> {
+  const res = await fetch(`${API_BASE}/api/journal`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    if (res.status === 401) { clearToken(); throw new Error('Unauthorized') }
+    if (res.status === 429) throw new Error("Rate limit reached. Please try again later.")
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as { detail?: string }).detail ?? res.statusText)
+  }
+  return res.json()
+}
+
 export async function fetchLiveQuote(symbol: string, exchange = 'NSE'): Promise<ReportView['screenerQuote']> {
   const res = await fetch(`${API_BASE}/api/quote/${encodeURIComponent(symbol)}?exchange=${exchange}`)
   if (!res.ok) throw new Error('Quote fetch failed')

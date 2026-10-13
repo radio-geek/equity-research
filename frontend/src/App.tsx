@@ -7,6 +7,7 @@ import ReportPage from './ReportPage'
 import TermsPage from './pages/TermsPage'
 import PrivacyPage from './pages/PrivacyPage'
 import { ContactModal } from './components/ContactModal'
+import { TradeJournalModal } from './components/TradeJournalModal'
 import { initAnalytics, trackPageView } from './analytics'
 
 function AnalyticsTracker() {
@@ -72,11 +73,12 @@ function Footer({ onContactOpen }: { onContactOpen: () => void }) {
 
 export default function App() {
   const [showContact, setShowContact] = useState(false)
+  const [showJournal, setShowJournal] = useState(false)
 
   return (
     <AuthProvider>
       <AnalyticsInit />
-      <Header />
+      <Header onJournalOpen={() => setShowJournal(true)} />
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/:symbol/report" element={<ReportPage />} />
@@ -86,6 +88,7 @@ export default function App() {
       <Footer onContactOpen={() => setShowContact(true)} />
       <AnalyticsTracker />
       {showContact && <ContactModal onClose={() => setShowContact(false)} />}
+      {showJournal && <TradeJournalModal onClose={() => setShowJournal(false)} />}
     </AuthProvider>
   )
 }

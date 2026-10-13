@@ -47,6 +47,7 @@ from backend.db import fetchone as db_fetchone
 from backend.error_store import log_error
 from backend.section_feedback_store import append_section_feedback
 from backend.contact_store import save_contact_message
+from backend.trade_journal_store import get_entries_for_user, has_buy_entry, add_entry as tj_add_entry
 from backend.job_store import create_job_store, get as job_get, set_pending
 from backend.pdf_render import render_payload_to_pdf
 from backend.pdf_download_store import log_pdf_download
@@ -405,6 +406,52 @@ class ContactRequest(BaseModel):
     name: str
     email: str
     message: str
+
+
+class TradeJournalEntryRequest(BaseModel):
+    symbol: str
+    action: str
+    trade_date: str
+    thesis: str
+
+
+@app.get("/api/journal")
+@limiter.limit("60/minute")
+async def api_journal_list(request: Request, current_user: dict = Depends(get_current_user)):
+    """Return all trade journal entries for the authenticated user."""
+    return {"entries": get_entries_for_user(current_user["id"])}
+
+
+@app.post("/api/journal")
+@limiter.limit("30/minute")
+async def api_journal_add(
+    request: Request,
+    body: TradeJournalEntryRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Add a trade journal entry. Sell entries require at least one existing buy for that symbol."""
+    symbol = (body.symbol or "").strip().upper()
+    action = (body.action or "").strip().lower()
+    trade_date = (body.trade_date or "").strip()
+    thesis = (body.thesis or "").strip()
+
+    if not symbol:
+        raise HTTPException(status_code=400, detail="symbol is required")
+    if action not in ("buy", "sell"):
+        raise HTTPException(status_code=400, detail="action must be 'buy' or 'sell'")
+    if not trade_date:
+        raise HTTPException(status_code=400, detail="trade_date is required")
+    if not thesis:
+        raise HTTPException(status_code=400, detail="thesis is required")
+
+    if action == "sell" and not has_buy_entry(current_user["id"], symbol):
+        raise HTTPException(
+            status_code=409,
+            detail=f"No buy entry found for {symbol}. Add a buy entry first.",
+        )
+
+    entry = tj_add_entry(current_user["id"], symbol, action, trade_date, thesis)
+    return {"ok": True, "entry": entry}
 
 
 @app.post("/api/contact")
